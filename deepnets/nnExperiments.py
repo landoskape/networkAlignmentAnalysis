@@ -145,6 +145,6 @@ def getDataPath(dataPath=None):
     # Path to stored datasets (might add input argument for running on a different computer...)
     if dataPath is None: 
         return os.path.join('C:/', 'Users','andrew','Documents','machineLearning','datasets')
-    if dataPath is "colab":
+    if dataPath=="colab":
         return "/content/drive/MyDrive/machineLearningDatasets"
 
