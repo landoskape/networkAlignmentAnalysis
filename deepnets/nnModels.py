@@ -32,17 +32,13 @@ class CNN2P2(nn.Module):
             nn.init.normal_(self.o.weight,mean=0,std=weightvars[4])  
 
     def forward(self, x):        
-        self.c1 = self.convActivation(self.conv1(x))        
-        self.c2 = self.maxPool(self.convActivation(self.conv2(self.c1))) 
-        self.f1 = self.linearActivation(self.fc1(torch.flatten(self.c2,1)))        
+        self.c1 = self.convActivation(self.conv1(x))
+        self.c2 = self.maxPool(self.convActivation(self.conv2(self.c1)))
+        self.f1 = self.linearActivation(self.fc1(torch.flatten(self.c2,1)))
         self.out = self.o(self.f1)
-        return self.out
-
-    def get_layers(self):
-        layers = [l for l in self.children()]
-        return layers   
+        return self.out 
     
-    def get_activations(self,x):
+    def getActivations(self,x):
         out = self.forward(x)
         activations = []
         activations.append(self.c1)
@@ -69,7 +65,7 @@ class CNN2P2(nn.Module):
         return deltaWeights
         
     def measureSimilarity(self,x):
-        activations = self.get_activations(x)            
+        activations = self.getActivations(x)            
         similarity = []
         similarity.append(torch.mean(aat.similarityConvLayer(x, self.conv1),axis=1))
         similarity.append(torch.mean(aat.similarityConvLayer(activations[0], self.conv2),axis=1))
@@ -78,7 +74,7 @@ class CNN2P2(nn.Module):
         return similarity
         
     def measureAlignment(self,x):
-        activations = self.get_activations(x)            
+        activations = self.getActivations(x)            
         alignment = []
         alignment.append(torch.mean(aat.alignmentConvLayer(x, self.conv1),axis=1))
         alignment.append(torch.mean(aat.alignmentConvLayer(activations[0], self.conv2),axis=1))
