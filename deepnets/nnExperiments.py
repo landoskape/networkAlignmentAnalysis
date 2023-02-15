@@ -11,7 +11,7 @@ from torchvision import transforms
 
 import deepnets.nnModels as models
 
-def runExperiment_measureIntegrationMNIST(useNet='CNN32',DEVICE=None,iterations=10,learningRate=1e-2,verbose=True):
+def runExperiment_measureIntegrationMNIST(useNet='CNN32',DEVICE=None,iterations=10,learningRate=1e-2,verbose=True,dataPath=None):
     """
     Function that measures integration across training of a neural network in each layer while learning to classify MNIST
     Input: 
@@ -30,7 +30,7 @@ def runExperiment_measureIntegrationMNIST(useNet='CNN32',DEVICE=None,iterations=
         transforms.ToTensor(), # first, convert image to PyTorch tensor
         transforms.Normalize((0.1307,), (0.3081,)), # normalize inputs
     ])
-    trainset, testset, trainloader, testloader, numClasses = downloadMNIST(batchSize=batchSize, preprocess=preprocess)
+    trainset, testset, trainloader, testloader, numClasses = downloadMNIST(batchSize=batchSize, preprocess=preprocess, dataPath=dataPath)
     
     # Prepare Network
     weightvars = None # initialize variance of weights with default parameters
@@ -132,8 +132,8 @@ def runExperiment_measureIntegrationMNIST(useNet='CNN32',DEVICE=None,iterations=
     return results
 
 
-def downloadMNIST(batchSize=1000,preprocess=None):
-    dataPath = getDataPath()
+def downloadMNIST(batchSize=1000,preprocess=None,dataPath=None):
+    dataPath = getDataPath(dataPath)
     trainset = torchvision.datasets.MNIST(root=dataPath, train=True, download=True, transform=preprocess)
     testset = torchvision.datasets.MNIST(root=dataPath, train=False, download=True, transform=preprocess)
     trainloader = torch.utils.data.DataLoader(trainset, batch_size=batchSize, shuffle=True, num_workers=2)
@@ -141,7 +141,10 @@ def downloadMNIST(batchSize=1000,preprocess=None):
     numClasses = 10
     return trainset, testset, trainloader, testloader, numClasses
     
-def getDataPath():
+def getDataPath(dataPath=None):
     # Path to stored datasets (might add input argument for running on a different computer...)
-    return os.path.join('C:/', 'Users','andrew','Documents','machineLearning','datasets')
+    if dataPath is None: 
+        return os.path.join('C:/', 'Users','andrew','Documents','machineLearning','datasets')
+    if dataPath is "colab":
+        return "/content/drive/MyDrive/machineLearningDatasets"
 
