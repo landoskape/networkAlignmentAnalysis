@@ -3,10 +3,12 @@ import matplotlib.pyplot as plt
 
 
 def plot_rf(rf, out_dim, M, showRFs=None, figSize=5):
-    if showRFs is None: showRFs=rf.shape[0]
-    rf = rf.reshape(out_dim, -1)
-    idxRandom = np.random.choice(range(rf.shape[0]),showRFs,replace=False)
-    rf = rf[idxRandom,:]
+    if showRFs is not None: 
+        rf = rf.reshape(out_dim, -1)
+        idxRandom = np.random.choice(range(rf.shape[0]),showRFs,replace=False)
+        rf = rf[idxRandom,:]
+    else: 
+        showRFs = out_dim
     # normalize
     rf = rf.T / np.abs(rf).max(axis=1)
     rf = rf.T

@@ -1,3 +1,4 @@
+import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -131,6 +132,14 @@ class argsSparseNet(object):
         for key in opts.keys():
             setattr(self, key, opts[key])
 
+def initWeights(imEvec, imEval, numNeurons, scaleFunction=None):
+    numEval = len(imEval)
+    if scaleFunction is not None: imEval = scaleFunction(imEval)
+    initBeta = np.random.exponential(scale=imEval, size=(numNeurons,numEval)).astype('float32')
+    signBeta = np.random.randint(0,2,size=initBeta.shape).astype('float32')*2-1
+    beta = torch.tensor(initBeta * signBeta)
+    weights = imEvec @ beta.T
+    return weights
 
 def similarity(inputActivity, weights):
     # input activity is a (b x n) matrix, where b=batch and n=neurons
