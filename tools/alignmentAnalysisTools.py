@@ -1,6 +1,7 @@
 import os
 import torch
 import numpy as np
+import torch.nn.functional as F
 from torchvision import transforms
     
 def alignment(inputActivity, weights, method='alignment'):
@@ -35,17 +36,23 @@ def alignmentLinearLayer(inputActivity, layer):
     return alignment(inputActivity.detach(), layer.weight.data.detach(), method='alignment')
 
 # similarity / alignment for convolutional network layers
-def alignmentConvLayer(inputActivity, layer):
-    preprocess0 = transforms.Pad(layer.padding)
-    pInput0 = preprocess0(inputActivity).detach()
+def alignmentConvLayer(inputActivity, layer, eachLook=True):
     hMax, wMax = getMaximumStrides(inputActivity.shape[2], inputActivity.shape[3], layer)
-    numLooks = hMax * wMax
-    numChannels = layer.out_channels
-    alignLayer = torch.empty((numChannels, numLooks))
-    for h in range(hMax): 
-        for w in range(wMax):
-            alignLayer[:,w+hMax*h] = alignmentConvLook(pInput0, layer, (h,w))
-    return alignLayer
+    if eachLook:
+        preprocess0 = transforms.Pad(layer.padding)
+        pInput0 = preprocess0(inputActivity).detach()
+        numLooks = hMax * wMax
+        numChannels = layer.out_channels
+        alignLayer = torch.empty((numChannels, numLooks))
+        for h in range(hMax): 
+            for w in range(wMax):
+                alignLayer[:,w+hMax*h] = alignmentConvLook(pInput0, layer, (h,w))
+        return alignLayer
+    else:
+        unfoldedInput = F.unfold(inputActivity.detach(), layer.kernel_size, stride=layer.stride, padding=layer.padding, dilation=layer.dilation)
+        unfoldedInput = unfoldedInput.transpose(1,2).reshape(inputActivity.size(0), -1)
+        unfoldedWeight = layer.weight.data.detach().view(layer.weight.size(0), -1).repeat(1, hMax*wMax)
+        return alignment(unfoldedInput, unfoldedWeight)
 
 def alignmentConvLook(pInput, layer, stride):
     # Take (NI, C, H, W) (transformed) input activity

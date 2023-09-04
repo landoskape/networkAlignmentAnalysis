@@ -73,11 +73,15 @@ class CNN2P2(nn.Module):
         similarity.append(aat.similarityLinearLayer(activations[2], self.o))
         return similarity
         
-    def measureAlignment(self,x):
+    def measureAlignment(self,x,eachLook=True):
         activations = self.getActivations(x)            
         alignment = []
-        alignment.append(torch.mean(aat.alignmentConvLayer(x, self.conv1),axis=1))
-        alignment.append(torch.mean(aat.alignmentConvLayer(activations[0], self.conv2),axis=1))
+        if eachLook:
+            alignment.append(torch.mean(aat.alignmentConvLayer(x, self.conv1),axis=1))
+            alignment.append(torch.mean(aat.alignmentConvLayer(activations[0], self.conv2),axis=1))
+        else:
+            alignment.append(aat.alignmentConvLayer(x, self.conv1, eachLook=eachLook))
+            alignment.append(aat.alignmentConvLayer(activations[0], self.conv2, eachLook=eachLook))
         alignment.append(aat.alignmentLinearLayer(torch.flatten(activations[1],1), self.fc1))
         alignment.append(aat.alignmentLinearLayer(activations[2], self.o))
         return alignment
