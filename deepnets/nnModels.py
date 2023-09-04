@@ -591,14 +591,21 @@ class AlexNet(nn.Module):
         similarity.append(aat.similarityLinearLayer(activations[6], self.fc7))
         return similarity
         
-    def measureAlignment(self,x):
+    def measureAlignment(self,x,eachLook=True):
         activations = self.getActivations(x)
         alignment = []
-        alignment.append(torch.mean(aat.alignmentConvLayer(x, self.conv0),axis=1))
-        alignment.append(torch.mean(aat.alignmentConvLayer(self.maxPool1(activations[0]), self.conv1),axis=1))
-        alignment.append(torch.mean(aat.alignmentConvLayer(self.maxPool2(activations[1]), self.conv2),axis=1))
-        alignment.append(torch.mean(aat.alignmentConvLayer(activations[2], self.conv3),axis=1))
-        alignment.append(torch.mean(aat.alignmentConvLayer(activations[3], self.conv4),axis=1))
+        if eachLook:
+            alignment.append(torch.mean(aat.alignmentConvLayer(x, self.conv0),axis=1))
+            alignment.append(torch.mean(aat.alignmentConvLayer(self.maxPool1(activations[0]), self.conv1),axis=1))
+            alignment.append(torch.mean(aat.alignmentConvLayer(self.maxPool2(activations[1]), self.conv2),axis=1))
+            alignment.append(torch.mean(aat.alignmentConvLayer(activations[2], self.conv3),axis=1))
+            alignment.append(torch.mean(aat.alignmentConvLayer(activations[3], self.conv4),axis=1))
+        else:
+            alignment.append(aat.alignmentConvLayer(x, self.conv0, eachLook=False))
+            alignment.append(aat.alignmentConvLayer(self.maxPool1(activations[0]), self.conv1, eachLook=False))
+            alignment.append(aat.alignmentConvLayer(self.maxPool2(activations[1]), self.conv2, eachLook=False))
+            alignment.append(aat.alignmentConvLayer(activations[2], self.conv3, eachLook=False))
+            alignment.append(aat.alignmentConvLayer(activations[3], self.conv4, eachLook=False))
         alignment.append(aat.alignmentLinearLayer(torch.flatten(self.do5(self.avgpool5(self.maxPool5(activations[4]))),1), self.fc5))
         alignment.append(aat.alignmentLinearLayer(activations[5], self.fc6))
         alignment.append(aat.alignmentLinearLayer(activations[6], self.fc7))
