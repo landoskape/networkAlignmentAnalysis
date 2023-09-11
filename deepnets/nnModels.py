@@ -37,13 +37,21 @@ class CNN2P2(nn.Module):
     def setDropout(self,dropout):
         return None
     
-    def getActivations(self,x):
-        out = self.forward(x)
-        activations = []
-        activations.append(self.c1)
-        activations.append(self.c2)
-        activations.append(self.f1)
-        activations.append(self.out)
+    def getActivations(self,x,usePrevious=False):
+        if usePrevious:
+            activations = [
+                self.c1, 
+                self.c2,
+                self.f1, 
+                self.out
+            ]
+        else:
+            out = self.forward(x)
+            activations = []
+            activations.append(self.c1)
+            activations.append(self.c2)
+            activations.append(self.f1)
+            activations.append(self.out)
         return activations
     
     def getNetworkWeights(self,onlyFF=False):
@@ -64,8 +72,8 @@ class CNN2P2(nn.Module):
             deltaWeights.append(torch.norm(cw-iw,dim=1))
         return deltaWeights
         
-    def measureSimilarity(self,x):
-        activations = self.getActivations(x)            
+    def measureSimilarity(self,x, usePrevious=False):
+        activations = self.getActivations(x, usePrevious=usePrevious)            
         similarity = []
         similarity.append(torch.mean(aat.similarityConvLayer(x, self.conv1),axis=1))
         similarity.append(torch.mean(aat.similarityConvLayer(activations[0], self.conv2),axis=1))
@@ -73,8 +81,8 @@ class CNN2P2(nn.Module):
         similarity.append(aat.similarityLinearLayer(activations[2], self.o))
         return similarity
         
-    def measureAlignment(self,x,eachLook=True):
-        activations = self.getActivations(x)            
+    def measureAlignment(self,x,eachLook=True,usePrevious=False):
+        activations = self.getActivations(x, usePrevious=usePrevious)            
         alignment = []
         if eachLook:
             alignment.append(torch.mean(aat.alignmentConvLayer(x, self.conv1),axis=1))
@@ -297,13 +305,21 @@ class MLP4(nn.Module):
         self.fc4.weight.data = self.fc4.weight.data / torch.norm(self.fc4.weight.data,dim=1,keepdim=True)
         #print(f"fc4: Weight.shape:{self.fc4.weight.data.shape}, update.shape:{dfc4.shape}")
         
-    def getActivations(self,x):
-        out = self.forward(x)
-        activations = []
-        activations.append(self.hidden1)
-        activations.append(self.hidden2)
-        activations.append(self.hidden3)
-        activations.append(self.output)
+    def getActivations(self,x,usePrevious=False):
+        if usePrevious:
+            activations = [
+                self.hidden1,
+                self.hidden2,
+                self.hidden3,
+                self.output
+            ]
+        else:
+            out = self.forward(x)
+            activations = []
+            activations.append(self.hidden1)
+            activations.append(self.hidden2)
+            activations.append(self.hidden3)
+            activations.append(self.output)
         return activations
     
     def getNetworkWeights(self):
@@ -323,8 +339,8 @@ class MLP4(nn.Module):
             deltaWeights.append(torch.norm(cw-iw,dim=1))
         return deltaWeights
     
-    def measureSimilarity(self,x):
-        activations = self.getActivations(x)            
+    def measureSimilarity(self,x,usePrevious=False):
+        activations = self.getActivations(x,usePrevious=usePrevious)            
         similarity = []
         similarity.append(aat.similarityLinearLayer(x, self.fc1))
         similarity.append(aat.similarityLinearLayer(activations[0], self.fc2))
@@ -332,8 +348,8 @@ class MLP4(nn.Module):
         similarity.append(aat.similarityLinearLayer(activations[2], self.fc4))
         return similarity
         
-    def measureAlignment(self,x):
-        activations = self.getActivations(x)            
+    def measureAlignment(self,x,usePrevious=False):
+        activations = self.getActivations(x,usePrevious=usePrevious)            
         alignment = []
         alignment.append(aat.alignmentLinearLayer(x, self.fc1))
         alignment.append(aat.alignmentLinearLayer(activations[0], self.fc2))
@@ -543,17 +559,29 @@ class AlexNet(nn.Module):
         self.do5.p = pDropout[0]
         self.do6.p = pDropout[1]
         
-    def getActivations(self,x,ffOnly=False):
-        out = self.forward(x)
-        activations = []
-        activations.append(self.h0) #0
-        activations.append(self.h1) #1
-        activations.append(self.h2) #2
-        activations.append(self.h3) #3
-        activations.append(self.h4) #4
-        activations.append(self.h5) #5
-        activations.append(self.h6) #6
-        activations.append(self.out) #7
+    def getActivations(self,x,ffOnly=False,usePrevious=False):
+        if usePrevious:
+            activations = [
+                self.h0,
+                self.h1,
+                self.h2,
+                self.h3,
+                self.h4,
+                self.h5,
+                self.h6,
+                self.out
+            ]
+        else:
+            out = self.forward(x)
+            activations = []
+            activations.append(self.h0) #0
+            activations.append(self.h1) #1
+            activations.append(self.h2) #2
+            activations.append(self.h3) #3
+            activations.append(self.h4) #4
+            activations.append(self.h5) #5
+            activations.append(self.h6) #6
+            activations.append(self.out) #7
         return activations
     
     def getNetworkWeights(self,ffOnly=False):
@@ -591,8 +619,8 @@ class AlexNet(nn.Module):
         similarity.append(aat.similarityLinearLayer(activations[6], self.fc7))
         return similarity
         
-    def measureAlignment(self,x,eachLook=True):
-        activations = self.getActivations(x)
+    def measureAlignment(self,x,eachLook=True,usePrevious=False):
+        activations = self.getActivations(x, usePrevious=usePrevious)
         alignment = []
         if eachLook:
             alignment.append(torch.mean(aat.alignmentConvLayer(x, self.conv0),axis=1))

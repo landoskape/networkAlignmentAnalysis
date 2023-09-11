@@ -26,6 +26,7 @@ def alignment(inputActivity, weights, method='alignment'):
         raise ValueError("did not recognize method")
     # Compute rayleigh quotient
     rq = torch.sum(torch.matmul(weights, cc) * weights, axis=1) / torch.sum(weights * weights, axis=1)
+    # proportion of variance explained by a projection of the input onto each weight
     return rq/torch.trace(cc)
 
 # similarity / alignment for linear network layers
