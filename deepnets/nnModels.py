@@ -323,11 +323,13 @@ class MLP4(nn.Module):
         return activations
     
     def getNetworkWeights(self):
-        netWeights = []
-        netWeights.append(self.fc1.weight.data.clone().detach())
-        netWeights.append(self.fc2.weight.data.clone().detach())
-        netWeights.append(self.fc3.weight.data.clone().detach())
-        netWeights.append(self.fc4.weight.data.clone().detach())
+        with torch.no_grad():
+            netWeights = [prm[1].clone() for prm in self.named_parameters() if 'weight' in prm[0]]
+        # netWeights = []
+        # netWeights.append(self.fc1.weight.data.clone().detach())
+        # netWeights.append(self.fc2.weight.data.clone().detach())
+        # netWeights.append(self.fc3.weight.data.clone().detach())
+        # netWeights.append(self.fc4.weight.data.clone().detach())
         return netWeights
     
     def compareNetworkWeights(self, initWeights):
