@@ -215,7 +215,7 @@ class CNN2P2(nn.Module):
             beta.append(torch.abs(nw.cpu() @ evc))
             
         return beta, eigenvalues, eigenvectors
-    
+
     @staticmethod
     def avgFromFull(full):
         numEpochs = len(full)
@@ -233,8 +233,8 @@ class CNN2P2(nn.Module):
             return torch.cat([f[layer][:,:,None] for f in full],dim=dim).cpu() 
         else:
             raise ValueError("Haven't coded layerFromFull for dimensions other than 1 or 2!")             
-     
     
+
 class MLP4(nn.Module):
     """
     MLP with 4 layers
