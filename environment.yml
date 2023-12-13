@@ -10,9 +10,11 @@ dependencies:
   - pytorch
   - torchvision
   - torchaudio
-  - pytorch-cuda=11.7
+  - pytorch-cuda=12.1
   - numpy
   - scipy
   - matplotlib
-  - jupyterlab
   - tqdm
+  - ipykernel
+  - pip:
+    - tensorboard
