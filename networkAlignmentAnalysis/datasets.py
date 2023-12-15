@@ -34,14 +34,13 @@ def measurePerformance(net, dataloader, DEVICE=None, verbose=False):
 
 
 
-def downloadMNIST(batchSize=1000,preprocess=None):
+def downloadMNIST(batchSize=1000, preprocess=None):
     dataPath = files.getDataPath('MNIST')
     trainset = torchvision.datasets.MNIST(root=dataPath, train=True, download=True, transform=preprocess)
     testset = torchvision.datasets.MNIST(root=dataPath, train=False, download=True, transform=preprocess)
     trainloader = torch.utils.data.DataLoader(trainset, batch_size=batchSize, shuffle=True, num_workers=2)
     testloader = torch.utils.data.DataLoader(testset, batch_size=batchSize, shuffle=True, num_workers=2)
-    numClasses = 10
-    return trainloader, testloader, numClasses
+    return trainloader, testloader
 
 def downloadImageNet(batchSize=1000):
     dataPath = files.getDataPath('ImageNet')
