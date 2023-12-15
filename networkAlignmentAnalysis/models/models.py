@@ -23,7 +23,7 @@ class CNN2P2(AlignmentNetwork):
     """
     CNN with 2 convolutional layers, a max pooling stage, and 2 feedforward layers with dropout
     """
-    def __init__(self):
+    def __init__(self, each_stride=True):
         super().__init__()
 
         layer1 = nn.Sequential(nn.Conv2d(1, 32, kernel_size=3, stride=2, padding=1), nn.ReLU())
@@ -32,7 +32,7 @@ class CNN2P2(AlignmentNetwork):
         layer3 = nn.Sequential(nn.Dropout(), nn.Linear(256, 256), nn.ReLU())
         layer4 = nn.Sequential(nn.Dropout(), nn.Linear(256, 10))
 
-        self.register_layer(layer1, **default_metaprms_conv2d(0, each_stride=False))
-        self.register_layer(layer2, **default_metaprms_conv2d(0, each_stride=False))
+        self.register_layer(layer1, **default_metaprms_conv2d(0, each_stride=each_stride))
+        self.register_layer(layer2, **default_metaprms_conv2d(0, each_stride=each_stride))
         self.register_layer(layer3, **default_metaprms_linear(1))
         self.register_layer(layer4, **default_metaprms_linear(1))
