@@ -3,8 +3,8 @@ import scipy as sp
 import torch
 import torch.nn.functional as F
 from torch import nn
+import tools.alignmentAnalysisTools as aat
 from torchvision import models, transforms
-
 
 class CNN2P2(nn.Module):
     """
