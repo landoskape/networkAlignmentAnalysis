@@ -4,40 +4,57 @@ import torch.nn.functional as F
 from torchvision import transforms
     
 @torch.no_grad()
-def alignment(inputActivity, weights, method='alignment'):
-    # input activity is a (b x n) matrix, where b=batch and n=neurons
-    # weights is a (m x n) matrix where each row corresponds to the weights for a single postsynaptic neuron
-    # computes the rayleigh quotient R(cc, w) between the weight of each postsynaptic neuron and the correlation matrix of the inputs 
-    # then divides by n, because sum(eigenvalue)=sum(trace)=n, so this bounds the outputs between 0 and 1
-    # -- note: this breaks if an input element has a standard deviation of 0! so we're just ignoring those values --
+def alignment(input, weight, method='alignment'):
+    """
+    measure alignment (proportion variance explained) between **input** and **weight**
+    
+    computes the rayleigh quotient between each weight vector in **weight** and the **input** fed 
+    into **weight**. Typically, **input** is the output in Layer L-1 and **weight** is from Layer L
+
+    the output is normalized by the total variance in output of layer L-1 to measure the proportion 
+    of variance of in **input** is explained by a projection onto node's weights in **weight**
+
+    args
+    ----
+        input: (batch, neurons) torch tensor 
+            - represents input activity being fed in to network weight layer
+        weight: (num_out, num_in) torch tensor 
+            - represents weights multiplied by input layer
+        method: string, default='alignment'
+            - which method to use to measure structure in **input** 
+            - if 'alignment', uses covariance matrix of **input**
+            - if 'similarity', uses correlation matrix of **input**
+
+    returns
+    -------
+        alignment: (num_out, ) torch tensor
+            - proportion of variance explained by projection of **input** onto each **weight** vector
+    """
     assert method=='alignment' or method=='similarity', "method must be set to either 'alignment' or 'similarity' (or None, default is alignment)"
-    inputActivity = torch.tensor(inputActivity) if not torch.is_tensor(inputActivity) else inputActivity
-    weights = torch.tensor(weights) if not torch.is_tensor(weights) else weights
-    b,n = inputActivity.shape
-    m = weights.shape[1]
+    b,n = input.shape
+    m = weight.shape[1]
     if method=='alignment':
-        cc = torch.cov(inputActivity.T)
+        cc = torch.cov(input.T)
     elif method=='similarity':
-        idxMute = torch.where(torch.std(inputActivity,axis=0)==0)[0]
-        cc = torch.corrcoef(inputActivity.T)
-        cc[idxMute,:] = 0
-        cc[:,idxMute] = 0
+        idx_no_activity = torch.where(torch.std(input,axis=0)==0)[0]
+        cc = torch.corrcoef(input.T)
+        cc[idx_no_activity,:] = 0
+        cc[:,idx_no_activity] = 0
     else: 
-        raise ValueError("did not recognize method")
+        raise ValueError(f"did not recognize method ({method}), must be 'alignment' or 'similarity'")
     # Compute rayleigh quotient
-    rq = torch.sum(torch.matmul(weights, cc) * weights, axis=1) / torch.sum(weights * weights, axis=1)
+    rq = torch.sum(torch.matmul(weight, cc) * weight, axis=1) / torch.sum(weight * weight, axis=1)
     # proportion of variance explained by a projection of the input onto each weight
     return rq/torch.trace(cc)
 
-# similarity / alignment for linear network layers
 @torch.no_grad()
-def similarityLinearLayer(inputActivity, layer):
-    return alignment(inputActivity.detach(), layer.weight.data.detach(), method='similarity')
+def alignment_linear(activity, weight, method='alignment'):
+    return alignment(activity, weight, method=method)
 
 @torch.no_grad()
-def alignmentLinearLayer(inputActivity, layer):
-    return alignment(inputActivity.detach(), layer.weight.data.detach(), method='alignment')
-
+def alignment_convolutional(activity, weight, each_look=True):
+    h_max, w_max = get_maximum_strides(activity.shape[2], activity.shape[3], weight)
+    
 # similarity / alignment for convolutional network layers
 @torch.no_grad()
 def alignmentConvLayer(inputActivity, layer, eachLook=True):
