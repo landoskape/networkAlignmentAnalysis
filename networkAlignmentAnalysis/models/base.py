@@ -1,9 +1,8 @@
-# import numpy as np
-# import scipy as sp
+import numpy as np
 import torch
 from torch import nn
-from .. import utils
 from .layers import LAYER_REGISTRY, REGISTRY_REQUIREMENTS, check_metaparameters
+from ..utils import check_iterable
 
 class AlignmentNetwork(nn.Module):
     """
@@ -127,7 +126,95 @@ class AlignmentNetwork(nn.Module):
             alignment.append(metaprms['alignment_method'](activation, layer, method=method))
         return alignment
 
+    @torch.no_grad()
+    def forward_targeted_dropout(self, x, idxs=None, layers=None):
+        """
+        perform forward pass with targeted dropout of hidden channels
 
+        **idxs** and **layers** are matched length tuples describing the layer to dropout
+        in and the idxs in that layer to dropout. The dropout happens after the layer (so
+        layer=(0) will correspond to the output of the first layer.
+
+        returns the output accounting for targeted dropout and also the full list of hidden
+        activations after targeted dropout (can use forward with store_hidden=True) for 
+        hidden activations without targeted dropout and use self.eval() for no dropout at all
+        """
+        assert check_iterable(idxs) and check_iterable(layers), "idxs and layers need to be iterables with the same length"
+        assert len(idxs)==len(layers), "idxs and layers need to be iterables with the same length"
+        assert len(layers)==len(np.unique(layers)), "layers must not have any repeated elements"
+        assert all([layer>=0 and layer<len(self.layers)-1 for layer in layers]), "dropout only works on first N-1 layers"
+        
+        activations = []
+        for idx_layer, (layer, metaprms) in enumerate(zip(self.layers, self.metaparameters)):
+            x = layer(x) # pass through next layer
+            if idx_layer in layers:
+                dropout_idx = idxs[{val:idx for idx, val in enumerate(layers)}[idx_layer]]
+                fraction_dropout = len(dropout_idx) / x.shape[1]
+                x[:, dropout_idx] = 0
+                x = x * (1 - fraction_dropout)
+            if not metaprms['ignore']:
+                activations.append(x) 
+            
+        return x, activations
+    
+    @torch.no_grad()
+    def measure_eigenfeatures(self, dataloader, DEVICE=None):
+        if DEVICE is None: DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
+        
+        # Measure Activations (without dropout) for all images
+        training_mode = self.training # save for resetting at the end
+
+        # turn off dropout and any training related features
+        self.eval()
+
+        # store input and measure activations for every element in dataloader
+        allinputs = []
+        activations = []
+        for images, label in dataloader:    
+            allinputs.append(images)
+            input = input.to(DEVICE)
+            label = label.to(DEVICE)
+            activations.append(self.get_activations(x=input, precomputed=False))
+
+        # return network to original training mode
+        if training_mode: 
+            self.train()
+        else:
+            self.eval()
+
+        # create large list of tensors containing input to each layer
+        num_layers = len(self.layers)
+        inputs_to_layers = []
+        inputs_to_layers.append(torch.cat(allinputs,dim=0).detach().cpu())
+        for layer in range(num_layers-1):
+            inputs_to_layers.append(torch.cat([cact[layer] for cact in activations],dim=0).detach().cpu())
+
+        # Measure eigenfeatures of input to each layer
+        eigenvalues = []
+        eigenvectors = []
+        for itl in inputs_to_layers:
+            # covariance matrix is positive semidefinite, but numerical errors can produce negative eigenvalues
+            ccov = torch.cov(itl.T)
+            crank = torch.linalg.matrix_rank(ccov)
+            w, v = torch.linalg.eigh(ccov)
+            w_idx = torch.argsort(-w)
+            w = w[w_idx]
+            v = v[:,w_idx]
+
+            # Automatically set eigenvalues to 0 when they are numerical errors!
+            w[crank:] = 0
+            eigenvalues.append(w)
+            eigenvectors.append(v)
+
+        # Measure dot product of weights on eigenvectors for each layer
+        beta = []
+        netweights = self.get_alignment_weights()
+        for evc,nw in zip(eigenvectors,netweights):
+            nw = nw / torch.norm(nw,dim=1,keepdim=True)
+            beta.append(torch.abs(nw.cpu() @ evc))
+            
+        return beta, eigenvalues, eigenvectors
+    
 
 # def ExperimentalNetwork(AlignmentNetwork):
 #     """maintain some experimental methods here"""
@@ -188,101 +275,3 @@ class AlignmentNetwork(nn.Module):
 #         self.fc3.weight.data = shapedWeights[2]
 #         self.fc4.weight.data = shapedWeights[3]
 
-#     def targetedDropout(net,x,idx=None,layer=None,returnFull=False):
-#         assert layer>=0 and layer<=2, "dropout only works on first three layers"
-#         h1 = net.actFunc(net.fc1(x))
-#         if layer==0: 
-#             fracDropout = len(idx)/h1.shape[1]
-#             h1[:,idx]=0
-#             h1 = h1 * (1 - fracDropout)
-#         h2 = net.actFunc(net.fc2(h1))
-#         if layer==1: 
-#             fracDropout = len(idx)/h2.shape[1]
-#             h2[:,idx]=0
-#             h2 = h2 * (1 - fracDropout)            
-#         h3 = net.actFunc(net.fc3(h2))
-#         if layer==2: 
-#             fracDropout = len(idx)/h3.shape[1]
-#             h3[:,idx]=0
-#             h3 = h3 * (1 - fracDropout)
-#         out = net.fc4(h3)
-#         if returnFull: return h1,h2,h3,out
-#         else: return out
-    
-#     def mlTargetedDropout(net,x,idx,layer,returnFull=False):
-#         assert type(idx) is tuple and type(layer) is tuple, "idx and layer need to be tuples"
-#         assert len(idx)==len(layer), "idx and layer need to have the same length"
-#         npLayer = np.array(layer)
-#         assert len(npLayer)==len(np.unique(npLayer)), "layer must not have any repeated elements"
-#         # Do forward pass with targeted dropout
-#         h1 = net.actFunc(net.fc1(x))
-#         if np.any(npLayer==0):
-#             cIndex = idx[npLayer==0]
-#             fracDropout = len(cIndex)/h1.shape[1]
-#             h1[:,cIndex]=0
-#             h1 = h1 * (1 - fracDropout)
-#         h2 = net.actFunc(net.fc2(h1))
-#         if np.any(npLayer==1):
-#             cIndex = idx[npLayer==1]
-#             fracDropout = len(cIndex)/h2.shape[1]
-#             h2[:,cIndex]=0
-#             h2 = h2 * (1 - fracDropout)            
-#         h3 = net.actFunc(net.fc3(h2))
-#         if np.any(npLayer==2):
-#             cIndex = idx[npLayer==2]
-#             fracDropout = len(cIndex)/h3.shape[1]
-#             h3[:,cIndex]=0
-#             h3 = h3 * (1 - fracDropout)
-#         out = net.fc4(h3)
-#         if returnFull: return h1,h2,h3,out
-#         else: return out
-    
-#     @staticmethod
-#     def measureEigenFeatures(net, dataloader, DEVICE=None):
-#         # Handle DEVICE if not provided
-#         if DEVICE is None: DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
-        
-#         # Measure Activations (without dropout) for all images
-#         storeDropout = net.getDropout()
-#         net.setDropout(0) # no dropout for measuring eigenfeatures
-#         allimages = []
-#         activations = []
-#         for images, label in dataloader:    
-#             allimages.append(images)
-#             images = images.to(DEVICE)
-#             label = label.to(DEVICE)
-#             activations.append(net.getActivations(images))
-#         net.setDropout(storeDropout)
-
-#         # Consolidate variable structure
-#         NL = net.numLayers
-#         allinputs = []
-#         allinputs.append(torch.cat(allimages,dim=0).detach().cpu())
-#         for layer in range(NL-1):
-#             allinputs.append(torch.cat([cact[layer] for cact in activations],dim=0).detach().cpu())
-
-#         # Measure eigenfeatures for each layer
-#         eigenvalues = []
-#         eigenvectors = []
-#         for ai in allinputs:
-#             # Covariance matrix is positive semidefinite, but numerical errors can produce negative eigenvalues
-#             ccov = torch.cov(ai.T)
-#             crank = torch.linalg.matrix_rank(ccov)
-#             w,v = sp.linalg.eigh(ccov)
-#             widx = np.argsort(w)[::-1]
-#             w = w[widx]
-#             v = v[:,widx]
-#             # Automatically set eigenvalues to 0 when they are numerical errors!
-#             w[crank:]=0
-#             eigenvalues.append(w)
-#             eigenvectors.append(v)
-
-#         # Measure dot product of weights on eigenvectors for each layer
-#         beta = []
-#         netweights = net.getNetworkWeights()
-#         for evc,nw in zip(eigenvectors,netweights):
-#             nw = nw / torch.norm(nw,dim=1,keepdim=True)
-#             beta.append(torch.abs(nw.cpu() @ evc))
-            
-#         return beta, eigenvalues, eigenvectors
-    

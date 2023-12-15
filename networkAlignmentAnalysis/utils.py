@@ -3,7 +3,15 @@ import numpy as np
 import torch.nn.functional as F
 from torchvision import transforms
     
-
+def check_iterable(val):
+    """duck-type check if val is iterable"""
+    try:
+        _ = iter(val)
+    except:
+        return False
+    else:
+        return True
+    
 def alignment(input, weight, method='alignment'):
     """
     measure alignment (proportion variance explained) between **input** and **weight**
@@ -49,6 +57,7 @@ def alignment(input, weight, method='alignment'):
 def alignment_linear(activity, layer, method='alignment'):
     """wrapper for alignment of linear layer"""
     return alignment(activity, layer.weight.data, method=method)
+
 
 def alignment_convolutional(activity, layer, each_stride=True, method='alignment'):
     """
