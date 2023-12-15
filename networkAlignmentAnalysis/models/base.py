@@ -25,6 +25,11 @@ class AlignmentNetwork(nn.Module):
     related processing. To use these, set 'ignore' of the metaparameters to True. Alternatively,
     you can append them to the last component of a layer.
 
+    Note: the choice of where to put layers matters. I usually nest a dropout in a sequential
+    layer in front of whatever layer is relevant for alignment, because then the previous 
+    hidden outputs will be measured before using dropout. Of course, this may not be desired,
+    it's just about your scientific question. 
+
     A layer in the layer_registry should have the following properties:
     1. Be a child of the nn.Module class with a forward method
     2. Have at most one "relevant" processing stage with weights for measuring alignment
