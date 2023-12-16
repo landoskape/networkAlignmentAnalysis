@@ -11,15 +11,28 @@ from functools import partial
 #                               is layer=nn.Sequential(nn.Linear(10,10), nn.Dropout()), then the layer
 #                               handle should be: lambda layer: layer[0])
 # alignment_method (callable): the method used to measure alignment for a particular layer
+# unfold (boolean): Determines whether the input to the layer should be flattened (e.g. if it's an image)
+#                   and if the weights should be unfolded (e.g. if it's a convolutional filter)
+# ignore (boolean): Determines whether the layer should be processed through alignment methods -- ignore 
+#                   should generally be False when a layer is used for shaping data or any other transformation
+#                   not involving a weight matrix with matrix multiplication
+
 # Note: as of writing this, I only have nn.Linear and nn.Conv2d here, but this will start to be more
 # useful and meaningful when reusing typical combinations of layers as a single registered "layer" 
 # that include things like dropout, pooling, nonlinearities, etc.
-REGISTRY_REQUIREMENTS = ['name', 'layer_handle', 'alignment_method', 'ignore']
+# Although, It seems like using default methods to retrieve metaparameters for compositional layers
+# and just setting the name and index of the relevant layer works pretty well too
+
+# requirements in any layer's metaparameters
+REGISTRY_REQUIREMENTS = ['name', 'layer_handle', 'alignment_method', 'unfold', 'ignore']
+
+# lookup table for simple layer types
 LAYER_REGISTRY = {
     nn.Linear: {
         'name': 'linear', 
         'layer_handle': lambda layer:layer, 
         'alignment_method': utils.alignment_linear,
+        'unfold': False,
         'ignore': False,
         },
 
@@ -27,17 +40,20 @@ LAYER_REGISTRY = {
         'name': 'conv2d', 
         'layer_handle': lambda layer:layer, 
         'alignment_method': utils.alignment_convolutional,
+        'unfold': True,
         'ignore': False,
         },
 }
 
+# a set of default metaparameters to be used for flexible layers
 def default_metaprms_ignore(name):
     """convenience method for named metaparameters to be ignored"""
     metaparameters = {
         'name': name,
         'layer_handle': None,
         'alignment_method': None,
-        'ignore': True
+        'unfold': False,
+        'ignore': True,
     }
     return metaparameters
 
@@ -47,6 +63,7 @@ def default_metaprms_linear(index, name='linear'):
         'name': name,
         'layer_handle': lambda layer: layer[index],
         'alignment_method': utils.alignment_linear,
+        'unfold': False, 
         'ignore': False,
     }
     return metaparameters
@@ -58,6 +75,7 @@ def default_metaprms_conv2d(index, name='conv2d', each_stride=True):
         'name': name,
         'layer_handle': lambda layer: layer[index],
         'alignment_method': alignment_method,
+        'unfold': True, 
         'ignore': False,
     }
     return metaparameters
