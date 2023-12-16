@@ -1,8 +1,10 @@
-import numpy as np
+from math import prod
+from tqdm import tqdm
 import torch
 from torch import nn
 from .layers import LAYER_REGISTRY, REGISTRY_REQUIREMENTS, check_metaparameters
 from ..utils import check_iterable
+from ..utils import get_maximum_strides
 
 class AlignmentNetwork(nn.Module):
     """
@@ -48,7 +50,7 @@ class AlignmentNetwork(nn.Module):
         kwargs can update keys in the metaparameters. If the layer class is not registered, then all 
         metaparameters must be provided as kwargs.
          
-        Required kwargs are: name, layer_handle, alignment_method, ignore, ...
+        Required kwargs are: name, layer_handle, alignment_method, unfold, ignore, ...
         """
         if not isinstance(layer, nn.Module):
             raise TypeError(f"provided layer is of type: {type(layer)}, but only nn.Module objects are permitted!")
@@ -105,9 +107,34 @@ class AlignmentNetwork(nn.Module):
         return metaparameters
     
     @torch.no_grad()
-    def get_alignment_weights(self):
-        """convenience method for retrieving registered weights for alignment measurements throughout the network"""
-        return [layer.weight.data for layer in self.get_alignment_layers()]
+    def get_alignment_weights(self, with_unfold=False, input_to_layers=None):
+        """
+        convenience method for retrieving registered weights for alignment measurements throughout the network
+        
+        optionally unfold convolutional weights if requested (by **with_unfold** set to True), this requires 
+        the **input_to_layers** to be provided to determine how many strides to unfold for
+        """
+        if with_unfold and input_to_layers is None:
+            raise ValueError("If unfolding is requested, input_to_layers must be provided.")
+        
+        # get weights
+        weights = [layer.weight.data for layer in self.get_alignment_layers()]
+
+        # unfold weights if requested
+        if with_unfold: 
+            if len(input_to_layers) != len(weights):
+                raise ValueError(f"There are {len(weights)} registered weights but only {len(input_to_layers)} were provided.")
+
+            # measure number of strides per layer
+            layers = self.get_alignment_layers()
+            num_strides = [prod(get_maximum_strides(input.shape[2], input.shape[3], layer))
+                           for input, layer in zip(input_to_layers, layers)]
+            
+            # then unfold and repeat weights for each stride
+            weights = [weight.view(weight.size(0), -1).repeat(1, strides)
+                       for weight, strides in zip(weights, num_strides)]
+
+        return weights
     
     @torch.no_grad()
     def compare_weights(self, weights):
@@ -141,7 +168,7 @@ class AlignmentNetwork(nn.Module):
         """
         assert check_iterable(idxs) and check_iterable(layers), "idxs and layers need to be iterables with the same length"
         assert len(idxs)==len(layers), "idxs and layers need to be iterables with the same length"
-        assert len(layers)==len(np.unique(layers)), "layers must not have any repeated elements"
+        assert len(layers)==len(set(layers)), "layers must not have any repeated elements"
         assert all([layer>=0 and layer<len(self.layers)-1 for layer in layers]), "dropout only works on first N-1 layers"
         
         activations = []
@@ -158,7 +185,7 @@ class AlignmentNetwork(nn.Module):
         return x, activations
     
     @torch.no_grad()
-    def measure_eigenfeatures(self, dataloader, DEVICE=None):
+    def measure_eigenfeatures(self, dataloader, DEVICE=None, with_updates=True):
         if DEVICE is None: DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
         
         # Measure Activations (without dropout) for all images
@@ -170,8 +197,9 @@ class AlignmentNetwork(nn.Module):
         # store input and measure activations for every element in dataloader
         allinputs = []
         activations = []
-        for images, label in dataloader:    
-            allinputs.append(images)
+        dataloop = tqdm(dataloader) if with_updates else dataloader
+        for input, label in dataloop:    
+            allinputs.append(input)
             input = input.to(DEVICE)
             label = label.to(DEVICE)
             activations.append(self.get_activations(x=input, precomputed=False))
@@ -183,18 +211,38 @@ class AlignmentNetwork(nn.Module):
             self.eval()
 
         # create large list of tensors containing input to each layer
-        num_layers = len(self.layers)
+        num_layers = len(activations[0])
         inputs_to_layers = []
         inputs_to_layers.append(torch.cat(allinputs,dim=0).detach().cpu())
         for layer in range(num_layers-1):
-            inputs_to_layers.append(torch.cat([cact[layer] for cact in activations],dim=0).detach().cpu())
+            inputs_to_layers.append(torch.cat([act[layer] for act in activations],dim=0).detach().cpu())
+
+        # retrieve weights and flatten inputs if required
+        weights = []
+        zipped = zip(inputs_to_layers, self.get_alignment_layers(), self.get_alignment_metaparameters())
+        for ii, (input, layer, metaprms) in enumerate(zipped):
+            weight = layer.weight.data
+            if metaprms['unfold']:
+                # unfold weights and add them to weights list
+                num_strides = prod(get_maximum_strides(input.shape[2], input.shape[3], layer))
+                unfolded_weights = weight.view(weight.size(0), -1).repeat(1, num_strides)
+                weights.append(unfolded_weights)
+
+                # unfold input activity and update inputs_to_layers
+                layer_prms = dict(stride=layer.stride, padding=layer.padding, dilation=layer.dilation)
+                unfolded_input = torch.nn.functional.unfold(input, layer.kernel_size, **layer_prms)
+                unfolded_input = unfolded_input.transpose(1, 2).reshape(input.size(0), -1)
+                inputs_to_layers[ii] = unfolded_input
+            else:
+                # if not unfolding weights, just add them directly
+                weights.append(weight)
 
         # Measure eigenfeatures of input to each layer
         eigenvalues = []
         eigenvectors = []
-        for itl in inputs_to_layers:
+        for input in inputs_to_layers:
             # covariance matrix is positive semidefinite, but numerical errors can produce negative eigenvalues
-            ccov = torch.cov(itl.T)
+            ccov = torch.cov(input.T)
             crank = torch.linalg.matrix_rank(ccov)
             w, v = torch.linalg.eigh(ccov)
             w_idx = torch.argsort(-w)
@@ -206,12 +254,11 @@ class AlignmentNetwork(nn.Module):
             eigenvalues.append(w)
             eigenvectors.append(v)
 
-        # Measure dot product of weights on eigenvectors for each layer
+        # Measure absolute value of dot product of weights on eigenvectors for each layer
         beta = []
-        netweights = self.get_alignment_weights()
-        for evc,nw in zip(eigenvectors,netweights):
-            nw = nw / torch.norm(nw,dim=1,keepdim=True)
-            beta.append(torch.abs(nw.cpu() @ evc))
+        for evec, weight in zip(eigenvectors, weights):
+            weight = weight / torch.norm(weight,dim=1,keepdim=True)
+            beta.append(torch.abs(weight.cpu() @ evec))
             
         return beta, eigenvalues, eigenvectors
     
