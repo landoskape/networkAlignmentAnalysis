@@ -186,6 +186,21 @@ class AlignmentNetwork(nn.Module):
     
     @torch.no_grad()
     def measure_eigenfeatures(self, dataloader, DEVICE=None, with_updates=True):
+        """
+        measure the eigenvalues and eigenvectors of the input to each layer
+        and also measure how much each weight array uses each eigenvector
+
+        computing eigenfeatures is intensive for computer for big matrices
+        so it's not a good idea to this on unfolded data in convolutional
+        layers. It's probably a good idea to do that sometimes -- I think 
+        sklearn's IncrementalPCA algorithm is best for that. But it still
+        takes a while so shouldn't be done frequently, only after training
+        for important networks. 
+
+        soon I'll get it working where I measure the eigenfeatures for each
+        stride independently and do a weighted average based on the norm of
+        the activity in each stride.
+        """
         if DEVICE is None: DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
         
         # Measure Activations (without dropout) for all images
