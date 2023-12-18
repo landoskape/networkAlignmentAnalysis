@@ -1,12 +1,13 @@
 from math import prod
 from tqdm import tqdm
+from abc import ABC, abstractmethod 
 import torch
 from torch import nn
 from .layers import LAYER_REGISTRY, REGISTRY_REQUIREMENTS, check_metaparameters
 from ..utils import check_iterable
 from ..utils import get_maximum_strides
 
-class AlignmentNetwork(nn.Module):
+class AlignmentNetwork(nn.Module, ABC):
     """
     This is the base class for a neural network used for alignment-related experiments. 
 
@@ -35,11 +36,38 @@ class AlignmentNetwork(nn.Module):
     1. Be a child of the nn.Module class with a forward method
     2. Have at most one "relevant" processing stage with weights for measuring alignment
     """
-    def __init__(self):
+    def __init__(self, **kwargs):
         super().__init__() # register it as a nn.Module
         self.layers = nn.ModuleList() # a list of all modules in the forward pass
         self.metaparameters = [] # list of dictionaries containing metaparameters for each layer
         self.hidden = [] # list of tensors containing hidden activations
+        self.initialize(**kwargs) # initialize the architecture using child class method
+
+    @abstractmethod
+    def initialize(self, **kwargs):
+        """
+        initialize is defined by child objects of the AlignmentNetwork class and is where
+        the network architecture is established
+
+        generally, initialize methods create a set of layers that represent the network
+        and use the `register_layer` method to add them to the network.
+
+        depending on the child network, various kwargs are required to initialize the network
+        these are passed into the class constructor and relayed to initialize. See each class
+        definition's initialize method for the specific kwargs relevant to each network type
+        """
+        pass
+
+    @abstractmethod
+    def get_transform_parameters(self, dataset):
+        """
+        this method is required throughout the repository to load specific transform parameters
+        for each dataset for each network. In each child class of AlignmentNetwork, this method
+        should define a dictionary where the possible datasets are the keys (as strings) and the
+        value for each dataset-key is another dictionary passed into the DataSet constructor to
+        define the transform parameters
+        """
+        pass
 
     def register_layer(self, layer, **kwargs):
         """
