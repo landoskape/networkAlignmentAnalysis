@@ -1,269 +1,120 @@
-import numpy as np
-import os
 import time
 from tqdm import tqdm
 import torch
-import torchvision
-
-import torch.nn as nn
-import torch.nn.functional as F
-from torchvision import transforms
-
-import deepnets.nnModels as models
+from networkAlignmentAnalysis.utils import transpose_list
 
 
+def train(nets, optimizers, dataset, **parameters):
+    """method for training network on supervised learning problem"""
 
-def measurePerformance(net, dataloader, DEVICE=None, verbose=False):
-    if DEVICE is None: DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
+    # do some variable checks
+    if not(isinstance(nets, list)): nets = [nets]
+    if not(isinstance(optimizers, list)): optimizers = [optimizers]
+    assert len(nets) == len(optimizers), "nets and optimizers need to be equal length lists"
+
+    # preallocate variables and define metaparameters
+    num_nets = len(nets)
+    use_train = parameters.get('train_set', True)
+    dataloader = dataset.train_loader if use_train else dataset.test_loader
+    num_steps = len(dataset.train_loader)*parameters['num_epochs']
+    track_loss = torch.zeros((num_steps, num_nets))
+    track_performance = []
     
-    # Measure performance
-    loss_function = nn.CrossEntropyLoss()
-    totalLoss = 0
-    numCorrect = 0
-    numAttempted = 0
-    
-    if verbose: iterator = tqdm(dataloader)
-    else: iterator = dataloader
-    
-    for batch in iterator:
-        images, label = batch
-        images = images.to(DEVICE)
-        label = label.to(DEVICE)
-        outputs = net(images)
-        totalLoss += loss_function(outputs,label).item()
-        output1 = torch.argmax(outputs,axis=1)
-        numCorrect += sum(output1==label)
-        numAttempted += images.shape[0]
-        
-    return totalLoss/len(dataloader), 100*numCorrect/numAttempted
+    # --- optional analyses ---
+    measure_alignment = parameters.get('alignment', True)
+    measure_delta_weights = parameters.get('delta_weights', False)
 
+    # measure alignment throughout training
+    if measure_alignment: 
+        alignment = []
 
+    # measure weight norm throughout training
+    if measure_delta_weights: 
+        delta_weights = []
+        init_weights = [net.get_alignment_weights() for net in nets]
 
+    # --- training loop ---
+    for epoch in range(parameters['num_epochs']):
+        print('Epoch: ', epoch)
 
-
-def trainNetwork(net, dataloader, lossFunction, optimizer, iterations, DEVICE, verbose=False):
-    """
-    Generic function for training network and measuring alignment throughout 
-    """
-    
-    # Preallocate summary variables  
-    numTrainingSteps = len(dataloader)*iterations
-    trackLoss = torch.zeros(numTrainingSteps)
-    trackAccuracy = torch.zeros(numTrainingSteps)
-    allWeights = []
-    alignFull = []
-    
-    initWeights = net.getNetworkWeights()
-    
-    # Train Network & Measure Integration
-    t = time.time()
-    for epoch in range(0, iterations): 
-        # Set current loss value
-        currentLoss = 0.0
-        numBatches = 0
-        currentCorrect = 0
-        currentAttempted = 0
-
-        for idx,batch in enumerate(dataloader):
+        for idx, batch in tqdm(enumerate(dataloader)):
             cidx = epoch*len(dataloader) + idx
-            
-            images, label = batch
-            images = images.to(DEVICE)
-            label = label.to(DEVICE)
+            images, labels = dataset.unwrap_batch(batch)
 
             # Zero the gradients
-            net.zero_grad()
-            optimizer.zero_grad()
+            for opt in optimizers: 
+                opt.zero_grad()
 
             # Perform forward pass
-            outputs = net(images)
-            
-            # Perform backward pass & optimization
-            loss = lossFunction(outputs, label)
-            loss.backward()
-            optimizer.step()
+            outputs = [net(images, store_hidden=True) for net in nets]
 
-            # Measure Integration
-            alignFull.append(net.measureAlignment(images))
+            # Perform backward pass & optimization
+            loss = [dataset.measure_loss(output, labels) for output in outputs]
+            for l, opt in zip(loss, optimizers):
+                l.backward()
+                opt.step()
+
+            track_loss[cidx] = torch.tensor([l.item() for l in loss])
+            track_performance.append([dataset.measure_performance(output, labels) for output in outputs])
+
+            if measure_alignment:
+                # Measure alignment if requested
+                alignment.append([net.measure_alignment(images, precomputed=True, method='alignment') 
+                                  for net in nets])
             
-            # Track Loss and Accuracy
-            trackLoss[cidx] = loss.item()
-            trackAccuracy[cidx] = 100*torch.sum(torch.argmax(outputs,axis=1)==label)/images.shape[0]
-        
-        # Return current weights
-        allWeights.append([cw.cpu() for cw in net.getNetworkWeights()])
-            
-        # Print statistics for each epoch
-        if verbose: print('Loss in epoch %3d: %.3f, Accuracy: %.2f%%.' % (epoch, loss.item(), 100*torch.sum(torch.argmax(outputs,axis=1)==label)/images.shape[0]))
+            if measure_delta_weights:
+                # Measure change in weights if requested
+                delta_weights.append([net.compare_weights(init_weight)
+                                      for net, init_weight in zip(nets, init_weights)])
     
     results = {
-        'net':net,
-        'initWeights':initWeights,
-        'allWeights':allWeights,
-        'trackLoss':trackLoss,
-        'trackAccuracy':trackAccuracy,
-        'alignFull':alignFull,
+        'loss': track_loss,
+        'performance': transpose_list(track_performance),
     }
+    
+    # add optional analyses
+    if measure_alignment: 
+        results['alignment'] = transpose_list(alignment)
+    if measure_delta_weights:
+        results['delta_weights'] = transpose_list(delta_weights)
+
     return results
 
-def trainNetworkRichInfo(net, dataloader, lossFunction, optimizer, iterations, DEVICE, verbose=False):
-    """
-    Generic function for training network and measuring alignment throughout 
-    """
-    
-    # Preallocate summary variables  
-    numTrainingSteps = len(dataloader)*iterations
-    trackLoss = torch.zeros(numTrainingSteps)
-    trackAccuracy = torch.zeros(numTrainingSteps)
-    allWeights = []
-    alignFull = []
-    deltaWeights = []
-    betas = []
-    evals = []
-    evecs = []
-    
-    initWeights = net.getNetworkWeights()
-    
-    # Train Network & Measure Integration
-    t = time.time()
-    for epoch in range(0, iterations): 
-        # Set current loss value
-        currentLoss = 0.0
-        numBatches = 0
-        currentCorrect = 0
-        currentAttempted = 0
 
-        for idx,batch in enumerate(dataloader):
-            cidx = epoch*len(dataloader) + idx
-            
-            images, label = batch
-            images = images.to(DEVICE)
-            label = label.to(DEVICE)
-            
-            # Zero the gradients
-            optimizer.zero_grad()
+@torch.no_grad()
+def test(net, dataset, **parameters):
+    """method for testing network on supervised learning problem"""
 
-            # Perform forward pass
-            outputs = net(images)
-            
-            # Perform backward pass & optimization
-            loss = lossFunction(outputs, label)
-            loss.backward()
-            optimizer.step()
-            
-            # Measure Integration
-            alignFull.append(net.measureAlignment(images))
-            
-            # Measure Change in Weights (NORM)
-            deltaWeights.append(net.compareNetworkWeights(initWeights))
+    # retrieve requested dataloader from dataset
+    use_test = parameters.get('test_set', True)
+    dataloader = dataset.test_loader if use_test else dataset.train_loader
 
-            # Track Loss and Accuracy
-            trackLoss[cidx] = loss.item()
-            trackAccuracy[cidx] = 100*torch.sum(torch.argmax(outputs,axis=1)==label)/images.shape[0]
+    # Performance Measurements
+    total_loss = 0
+    num_correct = 0
+    num_attempted = 0
+    alignment = []
 
-        # Print statistics for each epoch
-        if verbose: print('Loss in epoch %3d: %.3f, Accuracy: %.2f%%.' % (epoch, loss.item(), 100*torch.sum(torch.argmax(outputs,axis=1)==label)/images.shape[0]))
-        
-        # Return current weights (too much data if we do this every time)
-        allWeights.append([cw.cpu() for cw in net.getNetworkWeights()])
-            
-        # Measure eigenfeatures after each round through the data
-        cbetas, cevals, cevecs = net.measureEigenFeatures(net, dataloader)
-        betas.append([cb.cpu() for cb in cbetas])
-        evals.append(cevals)
-        evecs.append(cevecs)
+    for batch in tqdm(dataloader):
+        images, labels = dataset.unwrap_batch(batch)
+        minibatch_size = images.size(0)
+
+        # Perform forward pass
+        outputs = net(images, store_hidden=True)
+
+        # Perform backward pass & optimization
+        total_loss += dataset.measure_loss(outputs, labels).item()
+        num_correct += dataset.measure_performance(outputs, labels, percentage=False)
+        num_attempted += minibatch_size
+
+        # Measure Integration
+        alignment.append(net.measure_alignment(images, precomputed=True, method='alignment'))
     
     results = {
-        'net':net,
-        'initWeights':initWeights,
-        'allWeights':allWeights,
-        'trackLoss':trackLoss,
-        'trackAccuracy':trackAccuracy,
-        'alignFull':alignFull,
-        'deltaWeights':deltaWeights,
-        'beta':betas,
-        'evals':evals,
-        'evecs':evecs,
+        'loss': total_loss / num_attempted,
+        'accuracy': 100 * num_correct / num_attempted,
+        'alignment': alignment,
     }
+
     return results
 
-def trainNetworkManualShape(net, dataloader, lossFunction, optimizer, iterations, DEVICE, verbose=False, doManual=True, evalTransform=None):
-    """
-    Generic function for training network and measuring alignment throughout 
-    """
-    
-    # Preallocate summary variables  
-    numTrainingSteps = len(dataloader)*iterations
-    trackLoss = torch.zeros(numTrainingSteps)
-    trackAccuracy = torch.zeros(numTrainingSteps)
-    allWeights = []
-    alignFull = []
-    betas = []
-    evals = []
-    evecs = []
-    
-    initWeights = net.getNetworkWeights()
-    
-    # Train Network & Measure Integration
-    t = time.time()
-    for epoch in range(0, iterations): 
-        # Set current loss value
-        currentLoss = 0.0
-        numBatches = 0
-        currentCorrect = 0
-        currentAttempted = 0
-
-        for idx,batch in enumerate(dataloader):
-            cidx = epoch*len(dataloader) + idx
-            
-            images, label = batch
-            images = images.to(DEVICE)
-            label = label.to(DEVICE)
-            
-            # Zero the gradients
-            optimizer.zero_grad()
-
-            # Perform forward pass
-            outputs = net(images)
-            
-            # Perform backward pass & optimization
-            loss = lossFunction(outputs, label)
-            loss.backward()
-            optimizer.step()
-            
-            # Measure Integration
-            alignFull.append(net.measureAlignment(images))
-
-            # Track Loss and Accuracy
-            trackLoss[cidx] = loss.item()
-            trackAccuracy[cidx] = 100*torch.sum(torch.argmax(outputs,axis=1)==label)/images.shape[0]
-
-        # Print statistics for each epoch
-        if verbose: print('Loss in epoch %3d: %.3f, Accuracy: %.2f%%.' % (epoch, loss.item(), 100*torch.sum(torch.argmax(outputs,axis=1)==label)/images.shape[0]))
-            
-        # Measure eigenfeatures after each round through the data
-        cbetas, cevals, cevecs = net.measureEigenFeatures(net, dataloader)
-        betas.append([cb.cpu() for cb in cbetas])
-        evals.append(cevals)
-        evecs.append(cevecs)
-        
-        # Implement manual shape
-        if doManual:
-            net.manualShape(cevals, cevecs, DEVICE, evalTransform=evalTransform)
-            
-        # Return current weights (too much data if we do this every time)
-        allWeights.append([cw.cpu() for cw in net.getNetworkWeights()])
-            
-    
-    results = {
-        'net':net,
-        'initWeights':initWeights,
-        'trackLoss':trackLoss,
-        'trackAccuracy':trackAccuracy,
-        'alignFull':alignFull,
-        'allWeights':allWeights,
-        'beta':betas,
-        'evals':evals,
-        'evecs':evecs,
-    }
-    return results
