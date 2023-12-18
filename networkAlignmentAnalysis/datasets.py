@@ -109,13 +109,18 @@ class DataSet(ABC):
         """simple method for unwrapping batch for simple training loops"""
         device = self.device if device is None else device
         if self.extra_transform: batch = self.extra_transform(batch)
-        images, labels = batch
-        images, labels = images.to(device), labels.to(device)
-        return images, labels
+        inputs, targets = batch
+        inputs, targets = inputs.to(device), targets.to(device)
+        return inputs, targets
     
-    def measure_loss(self, outputs, labels):
+    def measure_loss(self, outputs, targets):
         """simple method for measuring loss with stored loss function"""
-        return self.loss_function(outputs, labels)
+        return self.loss_function(outputs, targets)
+    
+    @abstractmethod
+    def measure_performance(self, outputs, targets):
+        """simple method for measuring performance with any metrics other than the loss"""
+        pass
 
 
 class MNIST(DataSet):
@@ -155,3 +160,11 @@ class MNIST(DataSet):
             transform=self.transform,
         )
         return kwargs
+    
+    def measure_performance(self, outputs, targets, k=1, percentage=True):
+        """performance on mnist measure by top1 accuracy"""
+        topk = outputs.topk(k, dim=1, sorted=True, largest=True)[1]
+        out = torch.sum(torch.any(topk==targets.view(-1, 1), dim=1)) # num correct
+        if percentage: 
+            out = 100 * out/outputs.size(0) # percentage
+        return out
