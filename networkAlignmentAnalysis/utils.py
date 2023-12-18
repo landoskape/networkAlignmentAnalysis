@@ -67,9 +67,11 @@ def alignment_convolutional(activity, layer, each_stride=True, method='alignment
     convolutional stride, the second is to measure the alignment of the full 
     unfolded layer as if it was a matrix multiplication. each_stride determines
     which one to use. 
-
-    if using each_stride=True, the output is a (out_channels, num_strides) tensor
-    otherwise it is a (out_channels, ) tensor
+    
+    when each_stride=True, a weighted average of the alignment at each stride is
+    taken where the weights are the variance in the data at that stride. This way,
+    the output is a (num_output_channels, ) shaped tensor regardless of the setting
+    used for each_stride.
     """
     h_max, w_max = get_maximum_strides(activity.shape[2], activity.shape[3], layer)
     if each_stride:
@@ -79,10 +81,15 @@ def alignment_convolutional(activity, layer, each_stride=True, method='alignment
         num_channels = layer.out_channels
         w_idx, h_idx = torch.meshgrid(torch.arange(0, layer.kernel_size[0]), torch.arange(0, layer.kernel_size[1]), indexing='xy')
         align_layer = torch.zeros((num_channels, num_looks))
+        variance_stride = torch.zeros(num_looks)
         for h in range(h_max):
             for w in range(w_max):
-                align_layer[:, w + h_max*h] = alignment_conv_look(processed_activity, layer, (h, w), (h_idx, w_idx), method=method)
-        return align_layer
+                out_tuple = alignment_conv_look(processed_activity, layer, (h, w), (h_idx, w_idx), method=method)
+                align_layer[:, w + h_max*h], variance_stride[w + h_max*h] = out_tuple
+        
+        # weighted average over variance_stride...
+        align = torch.sum(align_layer * variance_stride.view(1, -1)) / torch.sum(variance_stride)
+        return align
     else:
         layer_prms = dict(stride=layer.stride, padding=layer.padding, dilation=layer.dilation)
         unfolded_input = torch.nn.functional.unfold(activity, layer.kernel_size, **layer_prms)
@@ -97,9 +104,10 @@ def alignment_conv_look(processed_activity, layer, stride, grid, method='alignme
     num_elements = processed_activity.shape[1] * layer.kernel_size[0] * layer.kernel_size[1]
     h_idx = grid[0] + stride[0]*layer.stride[0]
     w_idx = grid[1] + stride[1]*layer.stride[1]
-    alignedInput = processed_activity[:, :, h_idx, w_idx].reshape(num_images, num_elements)
-    alignedWeights = layer.weight.data.reshape(layer.out_channels, num_elements).detach()
-    return alignment(alignedInput, alignedWeights, method=method)
+    aligned_input = processed_activity[:, :, h_idx, w_idx].reshape(num_images, num_elements)
+    aligned_weights = layer.weight.data.reshape(layer.out_channels, num_elements).detach()
+    stride_variance = torch.mean(torch.var(aligned_input, dim=1))
+    return alignment(aligned_input, aligned_weights, method=method), stride_variance
 
 def get_maximum_strides(h_input, w_input, layer):
     h_max = int(np.floor((h_input + 2*layer.padding[0] - layer.dilation[0]*(layer.kernel_size[0] - 1) -1)/layer.stride[0] + 1))
@@ -122,3 +130,6 @@ def layer_from_full(full,layer,dim=1):
     else:
         raise ValueError("Haven't coded layer_from_full for dimensions other than 1 or 2!")
 
+def transpose_list(list_of_lists):
+    """helper function for transposing the order of a list of lists"""
+    return list(map(list, zip(*list_of_lists)))
