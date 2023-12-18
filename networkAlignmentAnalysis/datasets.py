@@ -19,13 +19,28 @@ def default_loader_parameters(batch_size=1024):
     return default_parameters
 
 class DataSet(ABC):
-    def __init__(self, transform_parameters={}, loader_parameters={}):
-        self.set_properties() # set properties
-        self.check_properties() # check if all required properties were set correctly
-        self.transform_parameters = transform_parameters # save transform parameters for good prudence
-        self.make_transform(**transform_parameters) # make torch transform for dataloader
+    def __init__(self, device=None, transform_parameters={}, loader_parameters={}):
+        # set properties of dataset and check that all required properties are defined
+        self.set_properties() 
+        self.check_properties() 
+
+        # define device for dataloading
+        self.device = device if device is not None else 'cuda' if torch.cuda.is_available() else 'cpu'
+
+        # define extra transform (should be a callable method or None) for any transformations that 
+        # can't go in the torchvision.transforms.Compose(...), hopefully this won't be needed later 
+        # when that issue is resolved (grayscale to RGB transform isn't working in Compose right now)
+        self.extra_transform = transform_parameters.pop('extra_transform', None)
+
+        # create transform for dataloader
+        self.transform_parameters = transform_parameters 
+        self.make_transform(**transform_parameters) 
+
+        # define the dataloader parameters
         self.dataloader_parameters = default_loader_parameters(**loader_parameters) # get dataloader parameters
-        self.load_dataset() # load datasets and create dataloaders
+        
+        # load the dataset and create the dataloaders
+        self.load_dataset() 
 
     def check_properties(self):
         """
@@ -90,8 +105,10 @@ class DataSet(ABC):
         self.train_loader = torch.utils.data.DataLoader(self.train_dataset, **self.dataloader_parameters)
         self.test_loader = torch.utils.data.DataLoader(self.test_dataset, **self.dataloader_parameters)
 
-    def unwrap_batch(self, batch, device='cpu'):
+    def unwrap_batch(self, batch, device=None):
         """simple method for unwrapping batch for simple training loops"""
+        device = self.device if device is None else device
+        if self.extra_transform: batch = self.extra_transform(batch)
         images, labels = batch
         images, labels = images.to(device), labels.to(device)
         return images, labels
@@ -114,14 +131,20 @@ class MNIST(DataSet):
         resize is the new (H, W) shape of the image for the transforms.Resize transform (or None)
         flatten is a boolean indicating whether to flatten the image, (i.e. for a linear input layer)
         """
-        resize = transforms.Resize(resize) if resize is not None else None
-        flatten = transforms.Lambda(torch.flatten) if flatten else None
-        self.transform = transforms.Compose([
+        # default transforms
+        use_transforms = [
             transforms.ToTensor(), # Convert PIL Image to PyTorch Tensor
             transforms.Normalize((0.1307,), (0.3081,)), # Normalize inputs to canonical distribution
-            resize, 
-            flatten,
-        ])
+            ]
+        
+        # extra transforms depending on network
+        if resize:
+            use_transforms.append(transforms.Resize(resize))
+        if flatten:
+            use_transforms.append(transforms.Lambda(torch.flatten))
+
+        # store composed transformation
+        self.transform = transforms.Compose(use_transforms)
 
     def dataset_kwargs(self, train=True):
         """set data constructor kwargs for MNIST"""
@@ -132,36 +155,3 @@ class MNIST(DataSet):
             transform=self.transform,
         )
         return kwargs
-
-
-"""
-Should turn these into classes for loading...
-Also I want the measure performance method to be a part of a standard dataloader class
-"""
-
-def measurePerformance(net, dataloader, DEVICE=None, verbose=False):
-    if DEVICE is None: DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
-    
-    # Measure performance
-    loss_function = nn.CrossEntropyLoss()
-    totalLoss = 0
-    numCorrect = 0
-    numAttempted = 0
-    
-    if verbose: iterator = tqdm(dataloader)
-    else: iterator = dataloader
-    
-    for batch in iterator:
-        images, label = batch
-        images = images.to(DEVICE)
-        label = label.to(DEVICE)
-        outputs = net(images)
-        totalLoss += loss_function(outputs,label).item()
-        output1 = torch.argmax(outputs,axis=1)
-        numCorrect += sum(output1==label)
-        numAttempted += images.shape[0]
-        
-    return totalLoss/len(dataloader), 100*numCorrect/numAttempted
-
-
-

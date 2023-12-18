@@ -12,6 +12,35 @@ from torchvision import transforms
 import deepnets.nnModels as models
 
 
+
+def measurePerformance(net, dataloader, DEVICE=None, verbose=False):
+    if DEVICE is None: DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
+    
+    # Measure performance
+    loss_function = nn.CrossEntropyLoss()
+    totalLoss = 0
+    numCorrect = 0
+    numAttempted = 0
+    
+    if verbose: iterator = tqdm(dataloader)
+    else: iterator = dataloader
+    
+    for batch in iterator:
+        images, label = batch
+        images = images.to(DEVICE)
+        label = label.to(DEVICE)
+        outputs = net(images)
+        totalLoss += loss_function(outputs,label).item()
+        output1 = torch.argmax(outputs,axis=1)
+        numCorrect += sum(output1==label)
+        numAttempted += images.shape[0]
+        
+    return totalLoss/len(dataloader), 100*numCorrect/numAttempted
+
+
+
+
+
 def trainNetwork(net, dataloader, lossFunction, optimizer, iterations, DEVICE, verbose=False):
     """
     Generic function for training network and measuring alignment throughout 
