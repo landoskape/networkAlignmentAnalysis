@@ -106,6 +106,12 @@ class AlignmentNetwork(nn.Module, ABC):
                 self.hidden.append(x)
         return x
     
+    def set_dropout(self, p=0.5):
+        """convenience method for setting dropout of all layers in a network"""
+        for module in self.modules():
+            if isinstance(module, nn.Dropout):
+                module.p = p
+        
     @torch.no_grad()
     def get_activations(self, x=None, precomputed=False):
         """convenience method for getting list of intermediate activations throughout the network"""
