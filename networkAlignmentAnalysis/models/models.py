@@ -1,14 +1,14 @@
 from torch import nn
 from .base import AlignmentNetwork
 from .layers import default_metaprms_conv2d, default_metaprms_ignore, default_metaprms_linear
-from torchvision import models as torch_models
+from torchvision.models import alexnet as torch_alexnet
 
 class MLP(AlignmentNetwork):
     """
     3 hidden layer fully-connected relu network for MNIST including dropouts after input layer
     """
-    def __init__(self, verbose=True):
-        super().__init__()
+    def initialize(self):
+        """architecture definition"""
 
         layer1 = nn.Sequential(nn.Linear(784, 100), nn.ReLU())
         layer2 = nn.Sequential(nn.Dropout(), nn.Linear(100, 100), nn.ReLU())
@@ -20,13 +20,24 @@ class MLP(AlignmentNetwork):
         self.register_layer(layer3, **default_metaprms_linear(1))
         self.register_layer(layer4, **default_metaprms_linear(1))
 
+    def get_transform_parameters(self, dataset):
+        """MLP specific transformations for each dataset"""
+        params = {
+            'MNIST': {
+                'flatten': True,
+                'resize': None, 
+            }
+        }
+        if dataset not in params: 
+            raise ValueError(f"Dataset ({dataset}) is not in params dictionary: {[k for k in params]}")
+        return params[dataset]
+
 class CNN2P2(AlignmentNetwork):
     """
     CNN with 2 convolutional layers, a max pooling stage, and 2 feedforward layers with dropout
     """
-    def __init__(self, each_stride=True):
-        super().__init__()
-
+    def initialize(self, each_stride=True):
+        """architecture definition"""
         layer1 = nn.Sequential(nn.Conv2d(1, 32, kernel_size=3, stride=2, padding=1), nn.ReLU())
         layer2 = nn.Sequential(nn.Conv2d(32, 64, kernel_size=3, stride=2, padding=1), 
                                nn.ReLU(), nn.MaxPool2d(kernel_size=3), nn.Flatten(start_dim=1))
@@ -37,6 +48,18 @@ class CNN2P2(AlignmentNetwork):
         self.register_layer(layer2, **default_metaprms_conv2d(0, each_stride=each_stride))
         self.register_layer(layer3, **default_metaprms_linear(1))
         self.register_layer(layer4, **default_metaprms_linear(1))
+
+    def get_transform_parameters(self, dataset):
+        """CNN2P2 specific transformations for each dataset"""
+        params = {
+            'MNIST': {
+                'flatten': False,
+                'resize': None, 
+            }
+        }
+        if dataset not in params: 
+            raise ValueError(f"Dataset ({dataset}) is not in params dictionary: {[k for k in params]}")
+        return params[dataset]
 
 
 class AlexNet(AlignmentNetwork):
@@ -73,10 +96,15 @@ class AlexNet(AlignmentNetwork):
       )
     )
     """
-    def __init__(self, num_classes=1000, weights=None, each_stride=True):
-        super().__init__()
-        alexnet = torch_models.alexnet(weights=weights, progress=True)
+    def initialize(self, num_classes=1000, weights=None, each_stride=True):
+        """architecture definition"""
+
+        # start by loading the architecture of alexnet along with pretrained weights (if requested)
+        alexnet = torch_alexnet(weights=weights, progress=True)
         
+        # sometimes AlexNet is used for ImageNet, as it was originally conceived, sometimes it is 
+        # used for alternative problems. This handles updates to the output layer for the required
+        # problem. (Different inputs are handled by the transforms in the dataloader).
         if num_classes==1000:
             output_layer = alexnet.classifier[6]
         else:
@@ -103,3 +131,21 @@ class AlexNet(AlignmentNetwork):
         self.register_layer(layer6, **default_metaprms_linear(1))
         self.register_layer(layer7, **default_metaprms_linear(1))
         self.register_layer(layer8, **default_metaprms_linear(0))
+
+    def get_transform_parameters(self, dataset):
+        """Alexnet specific transformations for each dataset"""
+        def gray_to_rgb(batch):
+            print(batch[0].shape)
+            batch[0] = batch[0].expand(-1, 3, -1, -1)
+            return batch
+            
+        params = {
+            'MNIST': {
+                'flatten': False,
+                'resize': (224, 224), 
+                'extra_transform': gray_to_rgb,
+            }
+        }
+        if dataset not in params: 
+            raise ValueError(f"Dataset ({dataset}) is not in params dictionary: {[k for k in params]}")
+        return params[dataset]
