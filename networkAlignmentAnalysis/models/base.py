@@ -96,7 +96,10 @@ class AlignmentNetwork(nn.Module, ABC):
         self.layers.append(layer)
         self.metaparameters.append(metaparameters)
 
-
+    def num_layers(self):
+        """convenience method for getting the number of alignment layers"""
+        return len(self.get_alignment_layers())
+    
     def forward(self, x, store_hidden=False):
         """standard forward pass of all layers with option of storing hidden activations (and output)"""
         self.hidden = [] # always reset so as to not keep a previous forward pass accidentally
