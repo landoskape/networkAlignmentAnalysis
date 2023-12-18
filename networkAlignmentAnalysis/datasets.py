@@ -168,3 +168,14 @@ class MNIST(DataSet):
         if percentage: 
             out = 100 * out/outputs.size(0) # percentage
         return out
+
+
+DATASET_REGISTRY = {
+    'MNIST': MNIST,
+}
+
+def get_dataset(dataset_name):
+    """lookup dataset constructor from dataset registry by name"""
+    if dataset_name not in DATASET_REGISTRY: 
+        raise ValueError(f"Dataset ({dataset_name}) is not in DATASET_REGISTRY")
+    return DATASET_REGISTRY[dataset_name]
