@@ -1,22 +1,23 @@
 from pathlib import Path
+import socket
+
+hostname = socket.gethostname()
+PATH_REGISTRY = {
+    'DESKTOP-M2J64J2': Path('C:/Users/andrew/Documents/machineLearning'),
+}
 
 def local_path():
-    return Path('C:/Users/andrew/Documents/machineLearning')
+    """method for defining the local root path for datasets and results"""
+    if hostname not in PATH_REGISTRY:
+        raise ValueError(f"hostname ({hostname}) is not registered in the path registry")
+    # return path
+    return PATH_REGISTRY[hostname]
 
 def data_path():
+    """method for returning the relative path containing datasets"""
     return local_path() / 'datasets'
 
 def dataset_path(dataset):
-    """path to stored dataset"""
+    """path to specific stored datasets (they all have different requirements)"""
     if dataset=='MNIST':
-        # 
         return data_path()
-
-def getDataPath(dataset='MNIST'):
-    # Path to stored datasets (might add input argument for running on a different computer...)
-    if dataset=='MNIST':
-        return os.path.join('C:/', 'Users','andrew','Documents','machineLearning','datasets')
-    elif dataset=='ImageNet':
-        return os.path.join('C:/', 'Users','andrew','Documents','machineLearning','datasets','imagenet')
-    else: 
-        raise ValueError("Didn't recognize dataset string.")
