@@ -156,6 +156,16 @@ def transpose_list(list_of_lists):
     """helper function for transposing the order of a list of lists"""
     return list(map(list, zip(*list_of_lists)))
 
+def named_transpose(list_of_lists):
+    """
+    helper function for transposing lists without forcing the output to be a list like transpose_list
+
+    for example, if list_of_lists contains 10 copies of lists that each have 3 iterable elements you
+    want to name "A", "B", and "C", then write:
+    A, B, C = named_transpose(list_of_lists)
+    """
+    return map(list, zip(*list_of_lists))
+
 def _ptp(tensor, dim=None, keepdim=False):
     if dim is None:
         return tensor.max() - tensor.min()
