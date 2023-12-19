@@ -6,6 +6,7 @@ sys.path.append(os.path.dirname(os.path.abspath(__file__)) + "/..")
 
 from datetime import datetime
 import numpy as np
+from tqdm import tqdm
 import torch
 from argparse import ArgumentParser
 
@@ -16,7 +17,7 @@ from networkAlignmentAnalysis import files
 from networkAlignmentAnalysis.models.registry import get_model
 from networkAlignmentAnalysis.datasets import get_dataset
 from networkAlignmentAnalysis import train
-from networkAlignmentAnalysis.utils import avg_from_full, compute_stats_by_type
+from networkAlignmentAnalysis.utils import avg_from_full, compute_stats_by_type, transpose_list, named_transpose
 
 DEVICE = 'cuda' if torch.cuda.is_available() else 'cpu'
 
@@ -54,7 +55,7 @@ def get_args():
 
     # main experiment parameters
     parser.add_argument('--comparison', type=str, default='lr') # what comparison to do
-    parser.add_argument('--lrs', type=float, nargs='*', default=[1e-3, 5e-4, 1e-4]) # which learning rates to use
+    parser.add_argument('--lrs', type=float, nargs='*', default=[1e-2, 1e-3, 1e-4]) # which learning rates to use
 
     # progressive dropout parameters
     parser.add_argument('--num_drops', type=int, default=9, help='number of dropout fractions for progressive dropout')
@@ -62,8 +63,8 @@ def get_args():
                         help='whether to do progressive dropout by layer or across all layers')
     
     # some metaparameters for the experiment
-    parser.add_argument('--epochs', type=int, default=1) # how many rounds of training to do
-    parser.add_argument('--replicates', type=int, default=1) # how many copies of identical networks to train
+    parser.add_argument('--epochs', type=int, default=100) # how many rounds of training to do
+    parser.add_argument('--replicates', type=int, default=10) # how many copies of identical networks to train
     
     # saving parameters
     parser.add_argument('--nosave', default=False, action='store_true')
@@ -71,9 +72,10 @@ def get_args():
     parser.add_argument('--save-networks', default=False, action='store_true')
     
     # any additional argument checks go here:
-    
+    args = parser.parse_args()
+
     # return parsed arguments
-    return parser.parse_args()
+    return args
 
 
 def load_networks(args):
@@ -118,7 +120,10 @@ def train_networks(nets, optimizers, dataset, args):
         alignment=True,
         delta_weights=True,
     )
+    print('training networks...')
     train_results = train.train(nets, optimizers, dataset, **parameters)
+    print('testing networks...')
+    parameters['train_set'] = False
     test_results = train.test(nets, dataset, **parameters)
 
     return train_results, test_results, prms
@@ -135,6 +140,7 @@ def plot_train_results(train_results, test_results, prms):
                                                             num_types=num_types, dim=1, method='se')
     train_acc_mean, train_acc_se = compute_stats_by_type(train_results['accuracy'],
                                                             num_types=num_types, dim=1, method='se')
+    
     align_mean, align_se = compute_stats_by_type(alignment, num_types=num_types, dim=0, method='se')
 
     test_loss_mean, test_loss_se = compute_stats_by_type(torch.tensor(test_results['loss']),
@@ -268,7 +274,7 @@ def plot_dropout_results(dropout_results, prms, dropout_parameters):
 
 
     # Plot Loss for progressive dropout experiment
-    fig, ax = plt.subplots(num_layers, num_types, figsize=(num_exp*figdim, num_types*figdim), sharex=True, sharey=True, layout='constrained')
+    fig, ax = plt.subplots(num_layers, num_types, figsize=(num_types*figdim, num_layers*figdim), sharex=True, sharey=True, layout='constrained')
     ax = np.reshape(ax, (num_layers, num_types))
 
     for idx, label in enumerate(labels):
@@ -286,10 +292,10 @@ def plot_dropout_results(dropout_results, prms, dropout_parameters):
                 ax[layer, idx].set_xlabel('Dropout Fraction')
                 ax[layer, idx].set_xlim(0, 1)
             
-            if iexp==0:
+            if idx==0:
                 ax[layer, idx].set_ylabel('Loss w/ Dropout')
 
-            if iexp==num_exp-1:
+            if idx==num_exp-1:
                 ax[layer, idx].legend(loc='best')
         
     if not args.nosave:
@@ -298,7 +304,7 @@ def plot_dropout_results(dropout_results, prms, dropout_parameters):
     plt.show()
 
 
-    fig, ax = plt.subplots(num_layers, num_types, figsize=(num_layers*figdim, num_types*figdim), sharex=True, sharey=True, layout='constrained')
+    fig, ax = plt.subplots(num_layers, num_types, figsize=(num_types*figdim, num_layers*figdim), sharex=True, sharey=True, layout='constrained')
     ax = np.reshape(ax, (num_layers, num_types))
 
     for idx, label in enumerate(labels):
@@ -318,14 +324,113 @@ def plot_dropout_results(dropout_results, prms, dropout_parameters):
                 ax[layer, idx].set_xlabel('Dropout Fraction')
                 ax[layer, idx].set_xlim(0, 1)
             
-            if iexp==0:
+            if idx==0:
                 ax[layer, idx].set_ylabel('Accuracy w/ Dropout')
 
-            if iexp==num_exp-1:
+            if idx==num_exp-1:
                 ax[layer, idx].legend(loc='best')
         
     if not args.nosave:
         plt.savefig(str(get_path(args, 'prog_dropout_'+extra_name+'_accuracy')))
+
+    plt.show()
+
+
+def plot_eigenfeatures(beta, eigvals, eigvecs, prms):
+    
+    num_types = len(prms['vals'])
+    labels = [f"{prms['name']}={val}" for val in prms['vals']]
+    cmap = mpl.colormaps['tab10']
+
+    # shape wrangling
+    beta = [torch.stack(b) for b in transpose_list(beta)]
+    eigvals = [torch.stack(ev) for ev in transpose_list(eigvals)]
+    eigvecs = [torch.stack(ev) for ev in transpose_list(eigvecs)]
+
+    # normalize to relative values
+    beta = [b / b.sum(dim=2, keepdim=True) for b in beta]
+    eigvals = [ev / ev.sum(dim=1, keepdim=True) for ev in eigvals]
+
+    # reuse these a few times
+    statprms = lambda method: dict(num_types=num_types, dim=0, method=method)
+
+    # get mean and variance eigenvalues for each layer for each network type
+    mean_evals, var_evals = named_transpose([compute_stats_by_type(ev, **statprms('var')) for ev in eigvals])
+
+    # get sorted betas (sorted within each neuron)
+    sorted_beta = [torch.sort(b, descending=True, dim=2).values for b in beta]
+
+    # get mean / se beta for each layer for each network type
+    mean_beta, se_beta = named_transpose([compute_stats_by_type(b, **statprms('var')) for b in beta])
+    mean_sorted, se_sorted = named_transpose([compute_stats_by_type(b, **statprms('var')) for b in sorted_beta])
+
+    figdim = 3
+    alpha = 0.3
+    num_layers = len(mean_beta)
+    fig, ax = plt.subplots(2, num_layers, figsize=(num_layers*figdim, figdim*2), layout='constrained')
+
+    for layer in range(num_layers):
+        num_input = mean_evals[layer].size(1)
+        num_nodes = mean_beta[layer].size(1)
+        for idx, label in enumerate(labels):
+            mn_ev = mean_evals[layer][idx]
+            se_ev = var_evals[layer][idx]
+            mn_beta = torch.mean(mean_beta[layer][idx], dim=0)
+            se_beta = torch.std(mean_beta[layer][idx], dim=0) / np.sqrt(num_nodes)
+            mn_sort = torch.mean(mean_sorted[layer][idx], dim=0)
+            se_sort = torch.std(mean_sorted[layer][idx], dim=0) / np.sqrt(num_nodes)
+            ax[0, layer].plot(range(num_input), mn_ev, color=cmap(idx), linestyle='--', label='eigvals' if idx==0 else None)
+            ax[0, layer].plot(range(num_input), mn_beta, color=cmap(idx), label=label)
+            ax[0, layer].fill_between(range(num_input), mn_beta+se_beta, mn_beta-se_beta, color=(cmap(idx), alpha))
+            ax[1, layer].plot(range(num_input), mn_sort, color=cmap(idx), label=label)
+            ax[1, layer].fill_between(range(num_input), mn_sort+se_sort, mn_sort-se_sort, color=(cmap(idx), alpha))
+            
+            ax[0, layer].set_xscale('log')
+            ax[1, layer].set_xscale('log')
+            ax[0, layer].set_xlabel('Input Dimension')
+            ax[1, layer].set_xlabel('Sorted Input Dim')
+            ax[0, layer].set_ylabel('Relative Eigval / Beta')
+            ax[1, layer].set_ylabel('Relative Beta')
+            ax[0, layer].set_title(f"Layer {layer}")
+            ax[1, layer].set_title(f"Layer {layer}")
+
+            if layer==num_layers-1:
+                ax[0, layer].legend(loc='best')
+                ax[1, layer].legend(loc='best')
+
+    if not args.nosave:
+        plt.savefig(str(get_path(args, 'eigenfeatures')))
+
+    plt.show()
+
+
+    fig, ax = plt.subplots(1, num_layers, figsize=(num_layers*figdim, figdim), layout='constrained')
+
+    for layer in range(num_layers):
+        num_input = mean_evals[layer].size(1)
+        num_nodes = mean_beta[layer].size(1)
+        for idx, label in enumerate(labels):
+            mn_ev = mean_evals[layer][idx]
+            se_ev = var_evals[layer][idx]
+            mn_beta = torch.mean(mean_beta[layer][idx], dim=0)
+            se_beta = torch.std(mean_beta[layer][idx], dim=0) / np.sqrt(num_nodes)
+            mn_sort = torch.mean(mean_sorted[layer][idx], dim=0)
+            se_sort = torch.std(mean_sorted[layer][idx], dim=0) / np.sqrt(num_nodes)
+            ax[layer].plot(range(num_input), mn_ev, color=cmap(idx), linestyle='--', label='eigvals' if idx==0 else None)
+            ax[layer].plot(range(num_input), mn_beta, color=cmap(idx), label=label)
+            ax[layer].fill_between(range(num_input), mn_beta+se_beta, mn_beta-se_beta, color=(cmap(idx), alpha))
+
+            ax[layer].set_xscale('log')
+            ax[layer].set_yscale('log')
+            ax[layer].set_xlabel('Input Dimension')
+            ax[layer].set_ylabel('Relative Eigval / Beta')
+            ax[layer].set_title(f"Layer {layer}")
+
+            if layer==num_layers-1:
+                ax[layer].legend(loc='best')
+
+    if not args.nosave:
+        plt.savefig(str(get_path(args, 'eigenfeatures_loglog')))
 
     plt.show()
 
@@ -348,15 +453,23 @@ if __name__ == '__main__':
     train_results, test_results, prms = train_networks(nets, optimizers, dataset, args)
 
     # do targeted dropout experiment
+    print('performing targeted dropout...')
     dropout_parameters = dict(num_drops=args.num_drops, by_layer=args.dropout_by_layer)
-    dropout_results = train.progressive_dropout(nets, dataset, **dropout_parameters)
+    dropout_results = train.progressive_dropout(nets, dataset, alignment=test_results['alignment'], **dropout_parameters)
 
     # measure eigenfeatures
-
+    print('measuring eigenfeatures...')
+    beta, eigvals, eigvecs = [], [], []
+    for net in tqdm(nets):
+        eigenfeatures = net.measure_eigenfeatures(dataset.test_loader, with_updates=False)
+        beta.append(eigenfeatures[0])
+        eigvals.append(eigenfeatures[1])
+        eigvecs.append(eigenfeatures[2])
 
     # plot results
     plot_train_results(train_results, test_results, prms)
     plot_dropout_results(dropout_results, prms, dropout_parameters)
+    plot_eigenfeatures(beta, eigvals, eigvecs, prms)
     
 
 
