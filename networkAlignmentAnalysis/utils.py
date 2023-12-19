@@ -115,21 +115,79 @@ def get_maximum_strides(h_input, w_input, layer):
     return h_max, w_max
 
 def avg_from_full(full):
+    """
+    return average alignment per layer across training
+
+    **full** is a list of lists where the outer list is each snapshot through training or 
+    minibatch etc and each inner list is the alignment for each node in the network across layers
+    
+    For example:
+    num_epochs = 1000
+    nodes_per_layer = [50, 40, 30, 20]
+    len(full) == 1000
+    len(full[i]) == 4 ... for all i
+    [f.shape for f in full[i]] = [50, 40, 30, 20] ... for all i
+
+    this method will return a tensor of size (num_layers, num_epochs) of the average alignment (or
+    whatever value is in **full**) for each list/list
+    """
     num_epochs = len(full)
     num_layers = len(full[0])
     avg_full = torch.zeros((num_layers,num_epochs))
     for layer in range(num_layers):
-        avg_full[layer,:] = torch.tensor([torch.nanmean(f[layer]) for f in full])
+        avg_full[layer,:] = torch.tensor([torch.mean(f[layer]) for f in full])
     return avg_full.cpu()
 
-def layer_from_full(full,layer,dim=1):
-    if dim==1: 
-        return torch.cat([f[layer][:,None] for f in full],dim=dim).cpu() 
-    elif dim==2:
-        return torch.cat([f[layer][:,:,None] for f in full],dim=dim).cpu() 
-    else:
-        raise ValueError("Haven't coded layer_from_full for dimensions other than 1 or 2!")
+def layer_from_full(full, layer):
+    """
+    return all alignment measurements for a particular layer from **full**
+
+    **full** is a list of lists where the outer list is each snapshot through training or
+    minibatch etc and each inner list is the alignment for each node in the network across layers
+
+    this method will return just the part of **full** corresponding to the layer indexed
+    by **layer** as a tensor of shape (num_nodes, num_epochs)
+
+    see ``avg_from_full`` for a little more explanation
+    """
+    return torch.cat([f[layer].view(-1, 1) for f in full], dim=1).cpu()
 
 def transpose_list(list_of_lists):
     """helper function for transposing the order of a list of lists"""
     return list(map(list, zip(*list_of_lists)))
+
+def _ptp(tensor, dim=None, keepdim=False):
+    if dim is None:
+        return tensor.max() - tensor.min()
+    return tensor.max(dim, keepdim).values - tensor.min(dim, keepdim).singular_values_
+
+def compute_stats_by_type(tensor, num_types, dim, method='var'):
+    """
+    helper method for returning the mean and variance across a certain dimension
+    where multiple types are concatenated on that dimension
+
+    for example, suppose we trained 2 networks each with 3 sets of parameters
+    and concatenated the loss in a tensor like [set1-loss-net1, set1-loss-net2, set2-loss-net1, ...]
+    then this would contract across the nets from each set and return the mean and variance
+    """
+    num_on_dim = tensor.size(dim)
+    num_per_type = int(num_on_dim / num_types)
+    tensor_by_type = tensor.unsqueeze(dim)
+    expand_shape = list(tensor_by_type.shape)
+    expand_shape[dim+1] = num_per_type
+    expand_shape[dim] = num_types
+    tensor_by_type = tensor_by_type.view(expand_shape)
+    type_means = torch.mean(tensor_by_type, dim=dim+1)
+    if method=='var':
+        type_dev = torch.var(tensor_by_type, dim=dim+1)
+    elif method=='std':
+        type_dev = torch.std(tensor_by_type, dim=dim+1)
+    elif method=='se':
+        type_dev = torch.std(tensor_by_type, dim=dim+1) / np.sqrt(num_per_type)
+    elif method=='range':
+        type_dev = _ptp(tensor_by_type, dim=dim+1)
+    else:
+        raise ValueError(f"Method ({method}) not recognized.")
+
+    return type_means, type_dev
+
