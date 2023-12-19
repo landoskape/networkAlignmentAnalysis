@@ -34,10 +34,8 @@ def train(nets, optimizers, dataset, **parameters):
         init_weights = [net.get_alignment_weights() for net in nets]
 
     # --- training loop ---
-    for epoch in range(parameters['num_epochs']):
-        print('Epoch: ', epoch)
-
-        for idx, batch in enumerate(tqdm(dataloader)):
+    for epoch in tqdm(range(parameters['num_epochs']), desc="training epoch"):
+        for idx, batch in enumerate(tqdm(dataloader, desc="minibatch", leave=False)):
             cidx = epoch*len(dataloader) + idx
             images, labels = dataset.unwrap_batch(batch)
 
@@ -92,7 +90,7 @@ def test(nets, dataset, **parameters):
     num_nets = len(nets)
 
     # retrieve requested dataloader from dataset
-    use_test = not parameters.get('train_set', True)
+    use_test = not parameters.get('train_set', False)
     dataloader = dataset.test_loader if use_test else dataset.train_loader
 
     # Performance Measurements
@@ -148,7 +146,7 @@ def get_dropout_indices(idx_alignment, fraction):
     return idx_high, idx_low, idx_rand
 
 @torch.no_grad()
-def progressive_dropout(nets, dataset, **parameters):
+def progressive_dropout(nets, dataset, alignment=None, **parameters):
     """
     method for testing network on supervised learning problem with progressive dropout
 
@@ -168,10 +166,12 @@ def progressive_dropout(nets, dataset, **parameters):
     num_dropout_layers = nets[0].num_layers() - 1 # (never dropout classification layer)
 
     # get alignment and index of alignment
-    all_alignment = test(nets, dataset, **parameters)['alignment']
+    if alignment is None:
+        alignment = test(nets, dataset, **parameters)['alignment']
+        
     alignment = [torch.stack(align, dim=1) 
                  for align in transpose_list([[torch.mean(layer_from_full(align, layer), dim=1) 
-                 for layer in range(num_dropout_layers)] for align in all_alignment])]
+                 for layer in range(num_dropout_layers)] for align in alignment])]
     idx_alignment = [torch.argsort(align, dim=0) for align in alignment]
             
     # preallocate variables and define metaparameters
