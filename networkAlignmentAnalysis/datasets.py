@@ -117,10 +117,19 @@ class DataSet(ABC):
         """simple method for measuring loss with stored loss function"""
         return self.loss_function(outputs, targets)
     
-    @abstractmethod
-    def measure_performance(self, outputs, targets):
-        """simple method for measuring performance with any metrics other than the loss"""
-        pass
+    def measure_accuracy(self, outputs, targets, k=1, percentage=True):
+        """
+        simple method for measuring accuracy on a classification problem
+        
+        default output is top1 percentage, but k can set the top-k accuracy
+        and if percentage=False then returns the number correct (by topk)
+        """
+        topk = outputs.topk(k, dim=1, sorted=True, largest=True)[1] # get topk indices
+        num_correct = torch.sum(torch.any(topk==targets.view(-1, 1), dim=1)) # num correct
+        if percentage: 
+            return 100 * num_correct/outputs.size(0) # percentage
+        else:
+            return num_correct
 
 
 class MNIST(DataSet):
@@ -160,14 +169,6 @@ class MNIST(DataSet):
             transform=self.transform,
         )
         return kwargs
-    
-    def measure_performance(self, outputs, targets, k=1, percentage=True):
-        """performance on mnist measure by top1 accuracy"""
-        topk = outputs.topk(k, dim=1, sorted=True, largest=True)[1]
-        out = torch.sum(torch.any(topk==targets.view(-1, 1), dim=1)) # num correct
-        if percentage: 
-            out = 100 * out/outputs.size(0) # percentage
-        return out
 
 
 DATASET_REGISTRY = {
