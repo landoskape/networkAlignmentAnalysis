@@ -145,7 +145,6 @@ class AlexNet(AlignmentNetwork):
     def get_transform_parameters(self, dataset):
         """Alexnet specific transformations for each dataset"""
         def gray_to_rgb(batch):
-            print(batch[0].shape)
             batch[0] = batch[0].expand(-1, 3, -1, -1)
             return batch
             
