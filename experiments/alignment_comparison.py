@@ -37,12 +37,12 @@ def get_path(args, name, network=False):
     # use timestamp to save each run independently (or not to have a "master" run)
     if args.use_timestamp:
         exp_path = exp_path / run_timestamp 
-    
-    # Make experiment directory if it doesn't yet exist
-    if not exp_path.exists(): 
-        exp_path.mkdir()
 
-    # return full path
+     # Make experiment directory if it doesn't yet exist
+    if not exp_path.exists(): 
+        exp_path.mkdir(parents=True)
+
+    # return full path (including stem)
     return exp_path / name
 
 
@@ -54,6 +54,8 @@ def get_args():
     parser.add_argument('--dataset', type=str, default='MNIST') # what dataset to use
 
     # main experiment parameters
+    # -- the "comparison" determines what should be compared by the script --
+    # -- right now, only the learning rate is possible to compare --
     parser.add_argument('--comparison', type=str, default='lr') # what comparison to do
     parser.add_argument('--lrs', type=float, nargs='*', default=[1e-2, 1e-3, 1e-4]) # which learning rates to use
 
@@ -205,7 +207,7 @@ def plot_train_results(train_results, test_results, prms):
     ax[3].set_title('Testing')
     ax[3].set_xlim(-0.5, num_types-0.5)
     ax[3].set_ylim(0, 100)
-
+    
     if not args.nosave:
         plt.savefig(str(get_path(args, 'train_test_performance')))
 
