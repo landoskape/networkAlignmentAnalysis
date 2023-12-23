@@ -1,13 +1,15 @@
 from pathlib import Path
 import socket
 
-hostname = socket.gethostname()
 PATH_REGISTRY = {
     'DESKTOP-M2J64J2': Path('C:/Users/andrew/Documents/machineLearning'),
 }
+def get_hostname():
+    return socket.gethostname()
 
 def local_path():
     """method for defining the local root path for datasets and results"""
+    hostname = get_hostname()
     if hostname not in PATH_REGISTRY:
         raise ValueError(f"hostname ({hostname}) is not registered in the path registry")
     # return path

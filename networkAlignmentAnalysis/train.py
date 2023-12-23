@@ -165,6 +165,11 @@ def progressive_dropout(nets, dataset, alignment=None, **parameters):
     # number layers that dropout can be performed in
     num_dropout_layers = nets[0].num_layers() - 1 # (never dropout classification layer)
 
+    # put networks in evaluation mode
+    in_training_mode = [net.training for net in nets]
+    for net in nets:
+        net.eval()
+
     # get alignment and index of alignment
     if alignment is None:
         alignment = test(nets, dataset, **parameters)['alignment']
@@ -173,7 +178,7 @@ def progressive_dropout(nets, dataset, alignment=None, **parameters):
                  for align in transpose_list([[torch.mean(layer_from_full(align, layer), dim=1) 
                  for layer in range(num_dropout_layers)] for align in alignment])]
     idx_alignment = [torch.argsort(align, dim=0) for align in alignment]
-            
+    
     # preallocate variables and define metaparameters
     num_nets = len(nets)
     num_drops = parameters.get('num_drops', 9)
@@ -251,5 +256,10 @@ def progressive_dropout(nets, dataset, alignment=None, **parameters):
         'dropout_fraction': drop_fraction,
         'by_layer': by_layer,
     }
+
+    # return networks to whatever mode they used to be in 
+    for train_mode, net in zip(in_training_mode, nets):
+        if train_mode:
+            net.train()
 
     return results

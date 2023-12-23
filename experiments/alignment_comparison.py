@@ -17,7 +17,7 @@ from networkAlignmentAnalysis import files
 from networkAlignmentAnalysis.models.registry import get_model
 from networkAlignmentAnalysis.datasets import get_dataset
 from networkAlignmentAnalysis import train
-from networkAlignmentAnalysis.utils import avg_from_full, compute_stats_by_type, transpose_list, named_transpose
+from networkAlignmentAnalysis.utils import avg_align_by_layer, compute_stats_by_type, transpose_list, named_transpose
 
 DEVICE = 'cuda' if torch.cuda.is_available() else 'cpu'
 
@@ -37,12 +37,12 @@ def get_path(args, name, network=False):
     # use timestamp to save each run independently (or not to have a "master" run)
     if args.use_timestamp:
         exp_path = exp_path / run_timestamp 
-    
-    # Make experiment directory if it doesn't yet exist
-    if not exp_path.exists(): 
-        exp_path.mkdir()
 
-    # return full path
+     # Make experiment directory if it doesn't yet exist
+    if not exp_path.exists(): 
+        exp_path.mkdir(parents=True)
+
+    # return full path (including stem)
     return exp_path / name
 
 
@@ -54,6 +54,8 @@ def get_args():
     parser.add_argument('--dataset', type=str, default='MNIST') # what dataset to use
 
     # main experiment parameters
+    # -- the "comparison" determines what should be compared by the script --
+    # -- right now, only the learning rate is possible to compare --
     parser.add_argument('--comparison', type=str, default='lr') # what comparison to do
     parser.add_argument('--lrs', type=float, nargs='*', default=[1e-2, 1e-3, 1e-4]) # which learning rates to use
 
@@ -133,7 +135,7 @@ def plot_train_results(train_results, test_results, prms):
     num_train_epochs = train_results['loss'].size(0)
     num_types = len(prms['vals'])
     labels = [f"{prms['name']}={val}" for val in prms['vals']]
-    alignment = torch.stack([avg_from_full(align).T for align in train_results['alignment']])
+    alignment = torch.stack([avg_align_by_layer(align).T for align in train_results['alignment']])
     cmap = mpl.colormaps['tab10']
 
     train_loss_mean, train_loss_se = compute_stats_by_type(train_results['loss'], 
@@ -205,7 +207,7 @@ def plot_train_results(train_results, test_results, prms):
     ax[3].set_title('Testing')
     ax[3].set_xlim(-0.5, num_types-0.5)
     ax[3].set_ylim(0, 100)
-
+    
     if not args.nosave:
         plt.savefig(str(get_path(args, 'train_test_performance')))
 

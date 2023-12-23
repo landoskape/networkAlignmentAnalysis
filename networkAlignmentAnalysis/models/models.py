@@ -6,19 +6,29 @@ from torchvision.models import alexnet as torch_alexnet
 class MLP(AlignmentNetwork):
     """
     3 hidden layer fully-connected relu network for MNIST including dropouts after input layer
+
+    includes optional kwargs for changing the hidden layer widths and the input dimensionality
     """
-    def initialize(self, dropout=0.5):
+    def initialize(self, input_dim=784, hidden_widths=[100, 100, 50], output_dim=10, dropout=0.5):
         """architecture definition"""
 
-        layer1 = nn.Sequential(nn.Linear(784, 100), nn.ReLU())
-        layer2 = nn.Sequential(nn.Dropout(p=dropout), nn.Linear(100, 100), nn.ReLU())
-        layer3 = nn.Sequential(nn.Dropout(p=dropout), nn.Linear(100, 50), nn.ReLU())
-        layer4 = nn.Sequential(nn.Dropout(p=dropout), nn.Linear(50, 10))
+        # Input layer is always Linear then ReLU
+        layerInput = nn.Sequential(nn.Linear(input_dim, hidden_widths[0]), nn.ReLU())
 
-        self.register_layer(layer1, **default_metaprms_linear(0))
-        self.register_layer(layer2, **default_metaprms_linear(1))
-        self.register_layer(layer3, **default_metaprms_linear(1))
-        self.register_layer(layer4, **default_metaprms_linear(1))
+        # Hidden layers are dropout / Linear / ReLU
+        layerHidden = []
+        for ii in range(len(hidden_widths)-1):
+            hwin, hwout = hidden_widths[ii], hidden_widths[ii+1]
+            layerHidden.append(nn.Sequential(nn.Dropout(p=dropout), nn.Linear(hwin, hwout), nn.ReLU()))
+            
+        # Output layer is alwyays Dropout then Linear
+        layerOutput = nn.Sequential(nn.Dropout(p=dropout), nn.Linear(hidden_widths[-1], output_dim))
+
+        # Register layers in order
+        self.register_layer(layerInput, **default_metaprms_linear(0))
+        for layer in layerHidden:
+            self.register_layer(layer, **default_metaprms_linear(1))
+        self.register_layer(layerOutput, **default_metaprms_linear(1))
 
     def get_transform_parameters(self, dataset):
         """MLP specific transformations for each dataset"""
@@ -135,7 +145,6 @@ class AlexNet(AlignmentNetwork):
     def get_transform_parameters(self, dataset):
         """Alexnet specific transformations for each dataset"""
         def gray_to_rgb(batch):
-            print(batch[0].shape)
             batch[0] = batch[0].expand(-1, 3, -1, -1)
             return batch
             

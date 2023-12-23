@@ -114,7 +114,7 @@ def get_maximum_strides(h_input, w_input, layer):
     w_max = int(np.floor((w_input + 2*layer.padding[1] - layer.dilation[1]*(layer.kernel_size[1] - 1) -1)/layer.stride[1] + 1))
     return h_max, w_max
 
-def avg_from_full(full):
+def avg_align_by_layer(full):
     """
     return average alignment per layer across training
 
@@ -138,7 +138,7 @@ def avg_from_full(full):
         avg_full[layer,:] = torch.tensor([torch.mean(f[layer]) for f in full])
     return avg_full.cpu()
 
-def layer_from_full(full, layer):
+def align_by_layer(full, layer):
     """
     return all alignment measurements for a particular layer from **full**
 
@@ -148,7 +148,7 @@ def layer_from_full(full, layer):
     this method will return just the part of **full** corresponding to the layer indexed
     by **layer** as a tensor of shape (num_nodes, num_epochs)
 
-    see ``avg_from_full`` for a little more explanation
+    see ``avg_align_by_layer`` for a little more explanation
     """
     return torch.cat([f[layer].view(-1, 1) for f in full], dim=1).cpu()
 
