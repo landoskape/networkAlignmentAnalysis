@@ -32,9 +32,22 @@ following script while in the environment and in the top directory:
 python experiments/alignment_comparison.py --nosave
 ```
 
-You'll need to edit the ``networkAlignmentAnalysis.files.py`` file to include
-a local filepath for your host machine if you want it to save figures and/or
-networks. 
+### Local File Management
+The repository depends on local file management to be established for many of
+the core functions to be used. Specifically, a local folder containing 
+standard machine learning datasets (like MNIST) and a file path designated for
+saving any data created by the experiment scripts. 
+
+To get this working, you'll need to edit ``networkAlignmentAnalysis/files.py`` 
+file to include the directory containing your ML datasets and a results 
+directory. To do so, pick a root directory and add a folder called "datasets"
+and another one called "results" to it. Add the root directory to the 
+dictionary called `PATH_REGISTRY`. The key should be whatever is returned by
+``socket.gethostname()`` and the value should be the root folder on your 
+computer. You'll also need to add whatever ML datasets you want to run 
+experiments on. Right now it's only setup for MNIST, but support for more is
+coming soon. Follow the directions on ML dataset websites and the convention
+set by ``dataset_path()`` (found in ``files.py``) for full compatibility. 
 
 ## Usage and Tutorial
 Detailed usage and tutorials can be found in a dedicated markdown file 
@@ -43,13 +56,13 @@ Detailed usage and tutorials can be found in a dedicated markdown file
 ## Contributing
 Feel free to contribute to this project by opening issues or submitting pull
 requests. It's already a collaborative project, so more minds are great if you
-have ideas or anything to add!
+have ideas or anything to contribute!
 
 ## License
 This project is licensed under the MIT License. If you use anything from this
 repository for more than learning about code and/or pytorch, please cite us. 
 There's no paper associated with the code at the moment, but you can cite our
-GitHub repository URL or email us for any updates. 
+GitHub repository URL or email us for any updates about this issue.
 
 
 
