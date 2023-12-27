@@ -1,6 +1,6 @@
-# Usage and Tutorials
+# Standard Usage and Documentation
 Short of a documentation page, this is a simple md file that explains the main
-features of the repository. For more information, please email or raise an 
+features of the repository. For more information, please email us or raise an 
 issue. 
 
 ## Key Modules
@@ -141,5 +141,7 @@ networks trained on a different dataset). The ``extra_transform`` key-value
 item is not required, but can include a callable method to be used after the
 data is loaded by the dataloader. Again, see below for more explanation. 
 
+
+### DataSet Objects
 More to come ...
 
