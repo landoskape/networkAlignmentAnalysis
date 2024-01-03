@@ -178,7 +178,7 @@ DATASET_REGISTRY = {
     'MNIST': MNIST,
 }
 
-def get_dataset(dataset_name, build=False, **kwargs):
+def get_dataset(dataset_name, build=False, transform_parameters={}, loader_parameters={}):
     """
     lookup dataset constructor from dataset registry by name
 
@@ -189,5 +189,5 @@ def get_dataset(dataset_name, build=False, **kwargs):
         raise ValueError(f"Dataset ({dataset_name}) is not in DATASET_REGISTRY")
     dataset = DATASET_REGISTRY[dataset_name]
     if build:
-        return dataset(**kwargs)
+        return dataset(transform_parameters=transform_parameters, loader_parameters=loader_parameters)
     return dataset
