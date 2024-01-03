@@ -17,7 +17,7 @@ from networkAlignmentAnalysis.experiments.base import Experiment
 from networkAlignmentAnalysis.models.registry import get_model
 from networkAlignmentAnalysis.datasets import get_dataset
 from networkAlignmentAnalysis import train
-from networkAlignmentAnalysis.utils import avg_align_by_layer, compute_stats_by_type, transpose_list, named_transpose
+from networkAlignmentAnalysis.utils import avg_value_by_layer, compute_stats_by_type, transpose_list, named_transpose
 
 DEVICE = 'cuda' if torch.cuda.is_available() else 'cpu'
 
@@ -154,8 +154,8 @@ def plot_train_results(train_results, test_results, prms, exp):
     num_train_epochs = train_results['loss'].size(0)
     num_types = len(prms['vals'])
     labels = [f"{prms['name']}={val}" for val in prms['vals']]
-    alignment = torch.stack([avg_align_by_layer(align).T for align in train_results['alignment']])
-    correlation = torch.stack([avg_align_by_layer(align).T for align in train_results['avgcorr']])
+    alignment = torch.stack([avg_value_by_layer(align).T for align in train_results['alignment']])
+    correlation = torch.stack([avg_value_by_layer(align).T for align in train_results['avgcorr']])
     cmap = mpl.colormaps['tab10']
 
     train_loss_mean, train_loss_se = compute_stats_by_type(train_results['loss'], 

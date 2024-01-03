@@ -19,7 +19,7 @@ from networkAlignmentAnalysis.experiments.base import Experiment
 from networkAlignmentAnalysis.models.registry import get_model
 from networkAlignmentAnalysis.datasets import get_dataset
 from networkAlignmentAnalysis import train
-from networkAlignmentAnalysis.utils import avg_align_by_layer, compute_stats_by_type, transpose_list, named_transpose
+from networkAlignmentAnalysis.utils import avg_value_by_layer, compute_stats_by_type, transpose_list, named_transpose
 
 DEVICE = 'cuda' if torch.cuda.is_available() else 'cpu'
 

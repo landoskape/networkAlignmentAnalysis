@@ -3,6 +3,18 @@ import numpy as np
 from matplotlib import pyplot as plt
 from torchvision import transforms
     
+# -- deprecation block --
+from warnings import warn
+
+def avg_align_by_layer(full):
+    warn("avg_align_by_layer is deprecated, change to avg_value_by_layer!", DeprecationWarning, stacklevel=2)
+    return avg_value_by_layer(full)
+
+def align_by_layer(full):
+    warn("align_by_layer is deprecated, change to value_by_layer!", DeprecationWarning, stacklevel=2)
+    return value_by_layer(full)
+# ------------------------
+
 def check_iterable(val):
     """duck-type check if val is iterable"""
     try:
@@ -150,13 +162,14 @@ def correlation_convolutional(output, alpha=1.0, each_stride=True, method='corr'
     else:
         output_by_channel = output.transpose(0, 1).reshape(output.shape[1], -1) # channels x (batch*H*W)
         return correlation(output_by_channel.T, alpha=alpha, method=method)
-    
-def avg_align_by_layer(full):
+
+def avg_value_by_layer(full):
     """
-    return average alignment per layer across training
+    return average value per layer across training
 
     **full** is a list of lists where the outer list is each snapshot through training or 
-    minibatch etc and each inner list is the alignment for each node in the network across layers
+    minibatch etc and each inner list is the value for each node in the network across layers
+    of a particular measurement
     
     For example:
     num_epochs = 1000
@@ -165,7 +178,7 @@ def avg_align_by_layer(full):
     len(full[i]) == 4 ... for all i
     [f.shape for f in full[i]] = [50, 40, 30, 20] ... for all i
 
-    this method will return a tensor of size (num_layers, num_epochs) of the average alignment (or
+    this method will return a tensor of size (num_layers, num_epochs) of the average value (for
     whatever value is in **full**) for each list/list
     """
     num_epochs = len(full)
@@ -175,17 +188,17 @@ def avg_align_by_layer(full):
         avg_full[layer,:] = torch.tensor([torch.mean(f[layer]) for f in full])
     return avg_full.cpu()
 
-def align_by_layer(full, layer):
+def value_by_layer(full, layer):
     """
-    return all alignment measurements for a particular layer from **full**
+    return all value measurements for a particular layer from **full**
 
     **full** is a list of lists where the outer list is each snapshot through training or
-    minibatch etc and each inner list is the alignment for each node in the network across layers
+    minibatch etc and each inner list is the value for each node in the network across layers
 
     this method will return just the part of **full** corresponding to the layer indexed
     by **layer** as a tensor of shape (num_nodes, num_epochs)
 
-    see ``avg_align_by_layer`` for a little more explanation
+    see ``avg_value_by_layer`` for a little more explanation
     """
     return torch.cat([f[layer].view(-1, 1) for f in full], dim=1).cpu()
 

@@ -1,7 +1,7 @@
 import time
 from tqdm import tqdm
 import torch
-from networkAlignmentAnalysis.utils import transpose_list, align_by_layer
+from networkAlignmentAnalysis.utils import transpose_list, value_by_layer
 
 
 def train(nets, optimizers, dataset, **parameters):
@@ -195,7 +195,7 @@ def progressive_dropout(nets, dataset, alignment=None, **parameters):
         alignment = test(nets, dataset, **parameters)['alignment']
         
     alignment = [torch.stack(align, dim=1) 
-                 for align in transpose_list([[torch.mean(align_by_layer(align, layer), dim=1) 
+                 for align in transpose_list([[torch.mean(value_by_layer(align, layer), dim=1) 
                  for layer in range(num_dropout_layers)] for align in alignment])]
     idx_alignment = [torch.argsort(align, dim=0) for align in alignment]
     
