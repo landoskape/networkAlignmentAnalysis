@@ -17,14 +17,16 @@ from functools import partial
 #                   should generally be False when a layer is used for shaping data or any other transformation
 #                   not involving a weight matrix with matrix multiplication
 
+
 # Note: as of writing this, I only have nn.Linear and nn.Conv2d here, but this will start to be more
 # useful and meaningful when reusing typical combinations of layers as a single registered "layer" 
 # that include things like dropout, pooling, nonlinearities, etc.
-# Although, It seems like using default methods to retrieve metaparameters for compositional layers
+
+# NOTE NOTE: It seems like using default methods to retrieve metaparameters for compositional layers
 # and just setting the name and index of the relevant layer works pretty well too
 
 # requirements in any layer's metaparameters
-REGISTRY_REQUIREMENTS = ['name', 'layer_handle', 'alignment_method', 'unfold', 'ignore']
+REGISTRY_REQUIREMENTS = ['name', 'layer_handle', 'alignment_method', 'correlation_method', 'unfold', 'ignore']
 
 # lookup table for simple layer types
 LAYER_REGISTRY = {
@@ -32,6 +34,7 @@ LAYER_REGISTRY = {
         'name': 'linear', 
         'layer_handle': lambda layer:layer, 
         'alignment_method': utils.alignment_linear,
+        'correlation_method': utils.correlation_linear,
         'unfold': False,
         'ignore': False,
         },
@@ -40,6 +43,7 @@ LAYER_REGISTRY = {
         'name': 'conv2d', 
         'layer_handle': lambda layer:layer, 
         'alignment_method': utils.alignment_convolutional,
+        'correlation_method': utils.correlation_convolutional,
         'unfold': True,
         'ignore': False,
         },
@@ -52,6 +56,7 @@ def default_metaprms_ignore(name):
         'name': name,
         'layer_handle': None,
         'alignment_method': None,
+        'correlation_method': None, 
         'unfold': False,
         'ignore': True,
     }
@@ -63,18 +68,21 @@ def default_metaprms_linear(index, name='linear'):
         'name': name,
         'layer_handle': lambda layer: layer[index],
         'alignment_method': utils.alignment_linear,
+        'correlation_method': utils.correlation_linear,
         'unfold': False, 
         'ignore': False,
     }
     return metaparameters
 
 def default_metaprms_conv2d(index, name='conv2d', each_stride=True):
-    alignment_method = partial(utils.alignment_convolutional, each_stride=each_stride)
     """convenience method for named metaparameters in a conv2d layer packaged in a sequential"""
+    alignment_method = partial(utils.alignment_convolutional, each_stride=each_stride)
+    correlation_method = partial(utils.correlation_convolutional, each_stride=False)
     metaparameters = {
         'name': name,
         'layer_handle': lambda layer: layer[index],
         'alignment_method': alignment_method,
+        'correlation_method': correlation_method,
         'unfold': True, 
         'ignore': False,
     }
@@ -92,4 +100,4 @@ def check_metaparameters(metaparameters, throw=True):
 for layer_type, metaparameters in LAYER_REGISTRY.items():
     if not check_metaparameters(metaparameters, throw=False):
         raise ValueError(f"Layer type: {layer_type} from the `LAYER_REGISTRY` is missing metaparameters. "
-                        "It requires all of the following: {REGISTRY_REQUIREMENTS}")
+                         f"It requires all of the following: {REGISTRY_REQUIREMENTS}")
