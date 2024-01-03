@@ -196,12 +196,23 @@ class AlignmentNetwork(nn.Module, ABC):
     
     @torch.no_grad()
     def measure_alignment(self, x, precomputed=False, method='alignment'):
-        # Pre-layer activations start with input (x and ignore output)
+        # Pre-layer activations start with input (x) and ignore output
         activations = [x, *self.get_activations(x=x, precomputed=precomputed)[:-1]]
         alignment = []
         for activation, layer, metaprms in zip(activations, self.get_alignment_layers(), self.get_alignment_metaparameters()):
             alignment.append(metaprms['alignment_method'](activation, layer, method=method))
         return alignment
+    
+    @torch.no_grad()
+    def measure_correlation(self, x, precomputed=False, alpha=1.0, reduced=True):
+        correlation = []
+        zipped = zip(self.get_activations(x=x, precomputed=precomputed), self.get_alignment_metaparameters())
+        for activation, metaprms in zipped:
+            ccorr = metaprms['correlation_method'](activation, alpha=alpha)
+            if reduced: 
+                correlation.append(ccorr[1])
+            else:
+                correlation.append(ccorr[0])
 
     @torch.no_grad()
     def forward_targeted_dropout(self, x, idxs=None, layers=None):
