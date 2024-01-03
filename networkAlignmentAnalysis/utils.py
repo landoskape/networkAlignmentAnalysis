@@ -11,7 +11,7 @@ def check_iterable(val):
         return False
     else:
         return True
-    
+
 def alignment(input, weight, method='alignment'):
     """
     measure alignment (proportion variance explained) between **input** and **weight**
@@ -167,9 +167,12 @@ def named_transpose(list_of_lists):
     return map(list, zip(*list_of_lists))
 
 def _ptp(tensor, dim=None, keepdim=False):
+    """
+    simple method for measuring range of tensor on requested dimension or on all data
+    """
     if dim is None:
         return tensor.max() - tensor.min()
-    return tensor.max(dim, keepdim).values - tensor.min(dim, keepdim).singular_values_
+    return tensor.max(dim, keepdim).values - tensor.min(dim, keepdim).values
 
 def compute_stats_by_type(tensor, num_types, dim, method='var'):
     """
