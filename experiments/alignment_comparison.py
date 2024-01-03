@@ -14,6 +14,7 @@ from matplotlib import pyplot as plt
 import matplotlib as mpl
 
 from networkAlignmentAnalysis import files
+from networkAlignmentAnalysis.experiments.base import Experiment
 from networkAlignmentAnalysis.models.registry import get_model
 from networkAlignmentAnalysis.datasets import get_dataset
 from networkAlignmentAnalysis import train
@@ -21,77 +22,48 @@ from networkAlignmentAnalysis.utils import avg_align_by_layer, compute_stats_by_
 
 DEVICE = 'cuda' if torch.cuda.is_available() else 'cpu'
 
-BASE_NAME = 'alignment_comparison'
-NETWORK_PATH = files.results_path() / BASE_NAME
-RESULTS_PATH = files.results_path() / BASE_NAME
-
-# register the timestamp of the run everytime this file is executed
-def register_timestamp():
-    return datetime.now().strftime("%Y%m%d_%H%M%S")
-
-def get_path(args, name, network=False):
-    """Method for retrieving paths for saving networks or data"""
-    base_path = NETWORK_PATH if network else RESULTS_PATH
-    exp_path = base_path / args.comparison / args.network / args.dataset # path to this experiment 
-
-    # use timestamp to save each run independently (or not to have a "master" run)
-    if args.use_timestamp:
-        exp_path = exp_path / run_timestamp 
-
-     # Make experiment directory if it doesn't yet exist
-    if not exp_path.exists(): 
-        exp_path.mkdir(parents=True)
-
-    # return full path (including stem)
-    return exp_path / name
-
-
-def get_args():
-    """Contained method for defining and parsing arguments for programmatic runs"""
-    parser = ArgumentParser(description='alignment_comparison')
+class AlignmentComparison(Experiment):
+    def get_basename(self):
+        return 'alignment_comparison'
     
-    parser.add_argument('--network', type=str, default='MLP') # what base network architecture to use
-    parser.add_argument('--dataset', type=str, default='MNIST') # what dataset to use
-
-    # main experiment parameters
-    # -- the "comparison" determines what should be compared by the script --
-    # -- depending on selection, something about the networks are varied throughout the experiment --
-    parser.add_argument('--comparison', type=str, default='lr') # what comparison to do (see load_networks for options)
-    parser.add_argument('--regularizers', type=str, nargs='*', default=['none', 'dropout', 'weight_decay'])
-    parser.add_argument('--lrs', type=float, nargs='*', default=[1e-2, 1e-3, 1e-4]) # which learning rates to use
-    parser.add_argument('--noises', type=float, nargs='*', default=[1e-1, 1, 2]) # the (relative) std of noise to use
-
-    # supporting parameters for some of the "comparisons"
-    parser.add_argument('--compare-dropout', type=float, default=0.5) # dropout when doing regularizer comparison
-    parser.add_argument('--compare-wd', type=float, default=1e-5) # weight-decay when doing regularizer comparison
-
-    # default parameters (if not controlled by the comparison)
-    parser.add_argument('--default-lr', type=float, default=1e-3) # default learning rate
-    parser.add_argument('--default-dropout', type=float, default=0) # default dropout rate
-    parser.add_argument('--default-wd', type=float, default=0) # default weight decay
-
-    # progressive dropout parameters
-    parser.add_argument('--num_drops', type=int, default=9, help='number of dropout fractions for progressive dropout')
-    parser.add_argument('--dropout_by_layer', default=False, action='store_true', 
-                        help='whether to do progressive dropout by layer or across all layers')
+    def prepare_path(self):
+        return [self.args.comparison, self.args.network, self.args.dataset]
     
-    # some metaparameters for the experiment
-    parser.add_argument('--epochs', type=int, default=100) # how many rounds of training to do
-    parser.add_argument('--replicates', type=int, default=10) # how many copies of identical networks to train
-    
-    # saving parameters
-    parser.add_argument('--nosave', default=False, action='store_true')
-    parser.add_argument('--use-timestamp', default=False, action='store_true')
-    parser.add_argument('--save-networks', default=False, action='store_true')
-    
-    # any additional argument checks go here:
-    args = parser.parse_args()
+    def make_args(self, parser):
+        parser.add_argument('--network', type=str, default='MLP') # what base network architecture to use
+        parser.add_argument('--dataset', type=str, default='MNIST') # what dataset to use
 
-    # return parsed arguments
-    return args
+        # main experiment parameters
+        # -- the "comparison" determines what should be compared by the script --
+        # -- depending on selection, something about the networks are varied throughout the experiment --
+        parser.add_argument('--comparison', type=str, default='lr') # what comparison to do (see load_networks for options)
+        parser.add_argument('--regularizers', type=str, nargs='*', default=['none', 'dropout', 'weight_decay'])
+        parser.add_argument('--lrs', type=float, nargs='*', default=[1e-2, 1e-3, 1e-4]) # which learning rates to use
+        parser.add_argument('--noises', type=float, nargs='*', default=[1e-1, 1, 2]) # the (relative) std of noise to use
+
+        # supporting parameters for some of the "comparisons"
+        parser.add_argument('--compare-dropout', type=float, default=0.5) # dropout when doing regularizer comparison
+        parser.add_argument('--compare-wd', type=float, default=1e-5) # weight-decay when doing regularizer comparison
+
+        # default parameters (if not controlled by the comparison)
+        parser.add_argument('--default-lr', type=float, default=1e-3) # default learning rate
+        parser.add_argument('--default-dropout', type=float, default=0) # default dropout rate
+        parser.add_argument('--default-wd', type=float, default=0) # default weight decay
+
+        # progressive dropout parameters
+        parser.add_argument('--num_drops', type=int, default=9, help='number of dropout fractions for progressive dropout')
+        parser.add_argument('--dropout_by_layer', default=False, action='store_true', 
+                            help='whether to do progressive dropout by layer or across all layers')
+        
+        # some metaparameters for the experiment
+        parser.add_argument('--epochs', type=int, default=100) # how many rounds of training to do
+        parser.add_argument('--replicates', type=int, default=10) # how many copies of identical networks to train
+        
+        # return parser
+        return parser
 
 
-def load_networks(args):
+def load_networks(exp):
     """
     method for loading networks
 
@@ -100,73 +72,78 @@ def load_networks(args):
     their optimizers and a params dictionary with the experiment parameters associated
     with each network
     """
-    model_constructor = get_model(args.network)
+    model_constructor = get_model(exp.args.network)
 
     # compare learning rates
-    if args.comparison == 'lr':
-        lrs = [lr for lr in args.lrs for _ in range(args.replicates)]
-        nets = [model_constructor(dropout=args.default_dropout) for _ in lrs]
+    if exp.args.comparison == 'lr':
+        lrs = [lr for lr in exp.args.lrs for _ in range(exp.args.replicates)]
+        nets = [model_constructor(dropout=exp.args.default_dropout) for _ in lrs]
         nets = [net.to(DEVICE) for net in nets]
-        optimizers = [torch.optim.Adam(net.parameters(), lr=lr, weight_decay=args.default_wd)
+        optimizers = [torch.optim.Adam(net.parameters(), lr=lr, weight_decay=exp.args.default_wd)
                       for net, lr in zip(nets, lrs)]
         prms = {
             'lrs': lrs, # the value of the independent variable for each network
             'name': 'lr', # the name of the parameter being varied
-            'vals': args.lrs, # the list of unique values for the relevant parameter
+            'vals': exp.args.lrs, # the list of unique values for the relevant parameter
         }
         return nets, optimizers, prms
     
     # compare training with input noise
-    elif args.comparison == 'noise':
-        noises = [nnorm for nnorm in args.noises for _ in range(args.replicates)]
-        nets = [model_constructor(dropout=args.default_dropout) for _ in noises]
+    elif exp.args.comparison == 'noise':
+        noises = [nnorm for nnorm in exp.args.noises for _ in range(exp.args.replicates)]
+        nets = [model_constructor(dropout=exp.rgs.default_dropout) for _ in noises]
         nets = [net.to(DEVICE) for net in nets]
-        optimizers = [torch.optim.Adam(net.parameters(), lr=args.default_lr) for net in nets]
+        optimizers = [torch.optim.Adam(net.parameters(), lr=exp.args.default_lr) for net in nets]
         prms = {
             'noises': noises, # the std of noise (relative to input std) added to the dataset
             'name': 'input_noise', # the name of the parameter being varied
-            'vals': args.noises, # the list of unique values for the relevant parameter
+            'vals': exp.args.noises, # the list of unique values for the relevant parameter
         }
         return nets, optimizers, prms
     
     # compare training with different regularizers
-    elif args.comparison == 'regularizer':
-        dropout_values = [args.compare_dropout * (reg == 'dropout') for reg in args.regularizers]
-        weight_decay_values = [args.compare_wd * (reg == 'weight_decay') for reg in args.regularizers]
-        dropouts = [do for do in dropout_values for _ in range(args.replicates)]
-        weight_decays = [wd for wd in weight_decay_values for _ in range(args.replicates)]
+    elif exp.args.comparison == 'regularizer':
+        dropout_values = [exp.args.compare_dropout * (reg == 'dropout') for reg in exp.args.regularizers]
+        weight_decay_values = [exp.args.compare_wd * (reg == 'weight_decay') for reg in exp.args.regularizers]
+        dropouts = [do for do in dropout_values for _ in range(exp.args.replicates)]
+        weight_decays = [wd for wd in weight_decay_values for _ in range(exp.args.replicates)]
         nets = [model_constructor(dropout=do) for do in dropouts]
         nets = [net.to(DEVICE) for net in nets]
-        optimizers = [torch.optim.Adam(net.parameters(), lr=args.default_lr, weight_decay=wd)
+        optimizers = [torch.optim.Adam(net.parameters(), lr=exp.args.default_lr, weight_decay=wd)
                       for net, wd in zip(nets, weight_decays)]
         prms = {
             'dropouts': dropouts, # dropout values by network
             'weight_decays': weight_decays, # weight decay values by network
             'name': 'regularizer', # name of experiment
-            'vals': args.regularizers, # name of unique regularizers
+            'vals': exp.args.regularizers, # name of unique regularizers
         }
         return nets, optimizers, prms
 
     else:
-        raise ValueError(f"Comparison={args.comparision} is not recognized")
+        raise ValueError(f"Comparison={exp.args.comparision} is not recognized")
     
-def load_dataset(args, transform_parameters):
+
+def load_dataset(exp, transform_parameters):
     """supporting method for loading the requested dataset"""
-    dataset_constructor = get_dataset(args.dataset)
+    dataset_constructor = get_dataset(exp.args.dataset)
     return dataset_constructor(transform_parameters=transform_parameters)
 
-def train_networks(nets, optimizers, dataset, args):
+
+def train_networks(nets, optimizers, dataset, exp):
     print('using device: ', DEVICE)
     
     # do training loop
     parameters = dict(
         train_set=True,
-        num_epochs=args.epochs,
+        num_epochs=exp.args.epochs,
         alignment=True,
         delta_weights=True,
     )
+
     print('training networks...')
     train_results = train.train(nets, optimizers, dataset, **parameters)
+
+    # do testing loop
     print('testing networks...')
     parameters['train_set'] = False
     test_results = train.test(nets, dataset, **parameters)
@@ -174,7 +151,7 @@ def train_networks(nets, optimizers, dataset, args):
     return train_results, test_results, prms
 
 
-def plot_train_results(train_results, test_results, prms):
+def plot_train_results(train_results, test_results, prms, exp):
     num_train_epochs = train_results['loss'].size(0)
     num_types = len(prms['vals'])
     labels = [f"{prms['name']}={val}" for val in prms['vals']]
@@ -251,8 +228,8 @@ def plot_train_results(train_results, test_results, prms):
     ax[3].set_xlim(-0.5, num_types-0.5)
     ax[3].set_ylim(0, 100)
 
-    if not args.nosave:
-        plt.savefig(str(get_path(args, 'train_test_performance')))
+    if not exp.args.nosave:
+        plt.savefig(str(exp.get_path('train_test_performance')))
 
     plt.show()
 
@@ -275,13 +252,13 @@ def plot_train_results(train_results, test_results, prms):
 
     ax[0].legend(loc='lower right')
 
-    if not args.nosave:
-        plt.savefig(str(get_path(args, 'train_alignment_by_layer')))
+    if not exp.args.nosave:
+        plt.savefig(str(exp.get_path('train_alignment_by_layer')))
 
     plt.show()
 
 
-def plot_dropout_results(dropout_results, prms, dropout_parameters):
+def plot_dropout_results(dropout_results, prms, dropout_parameters, exp):
     num_types = len(prms['vals'])
     labels = [f"{prms['name']}={val}" for val in prms['vals']]
     cmap = mpl.colormaps['Set1']
@@ -343,8 +320,8 @@ def plot_dropout_results(dropout_results, prms, dropout_parameters):
             if idx==num_exp-1:
                 ax[layer, idx].legend(loc='best')
         
-    if not args.nosave:
-        plt.savefig(str(get_path(args, 'prog_dropout_'+extra_name+'_loss')))
+    if not exp.args.nosave:
+        plt.savefig(str(exp.get_path('prog_dropout_'+extra_name+'_loss')))
 
     plt.show()
 
@@ -375,13 +352,13 @@ def plot_dropout_results(dropout_results, prms, dropout_parameters):
             if idx==num_exp-1:
                 ax[layer, idx].legend(loc='best')
         
-    if not args.nosave:
-        plt.savefig(str(get_path(args, 'prog_dropout_'+extra_name+'_accuracy')))
+    if not exp.args.nosave:
+        plt.savefig(str(exp.get_path('prog_dropout_'+extra_name+'_accuracy')))
 
     plt.show()
 
 
-def plot_eigenfeatures(beta, eigvals, eigvecs, prms):
+def plot_eigenfeatures(beta, eigvals, eigvecs, prms, exp):
     
     num_types = len(prms['vals'])
     labels = [f"{prms['name']}={val}" for val in prms['vals']]
@@ -443,8 +420,8 @@ def plot_eigenfeatures(beta, eigvals, eigvecs, prms):
                 ax[0, layer].legend(loc='best')
                 ax[1, layer].legend(loc='best')
 
-    if not args.nosave:
-        plt.savefig(str(get_path(args, 'eigenfeatures')))
+    if not exp.args.nosave:
+        plt.savefig(str(exp.get_path('eigenfeatures')))
 
     plt.show()
 
@@ -474,32 +451,29 @@ def plot_eigenfeatures(beta, eigvals, eigvecs, prms):
             if layer==num_layers-1:
                 ax[layer].legend(loc='best')
 
-    if not args.nosave:
-        plt.savefig(str(get_path(args, 'eigenfeatures_loglog')))
+    if not exp.args.nosave:
+        plt.savefig(str(exp.get_path('eigenfeatures_loglog')))
 
     plt.show()
 
 
 if __name__ == '__main__':
 
-    # run parameters
-    args = get_args()
-
-    # get timestamp
-    run_timestamp = register_timestamp()
+    # Create experiment 
+    exp = AlignmentComparison()
 
      # get networks
-    nets, optimizers, prms = load_networks(args)
+    nets, optimizers, prms = load_networks(exp)
 
     # load dataset
-    dataset = load_dataset(args, nets[0].get_transform_parameters(args.dataset))
+    dataset = load_dataset(exp, nets[0].get_transform_parameters(exp.args.dataset))
 
     # do training 
-    train_results, test_results, prms = train_networks(nets, optimizers, dataset, args)
+    train_results, test_results, prms = train_networks(nets, optimizers, dataset, exp)
 
     # do targeted dropout experiment
     print('performing targeted dropout...')
-    dropout_parameters = dict(num_drops=args.num_drops, by_layer=args.dropout_by_layer)
+    dropout_parameters = dict(num_drops=exp.args.num_drops, by_layer=exp.args.dropout_by_layer)
     dropout_results = train.progressive_dropout(nets, dataset, alignment=test_results['alignment'], **dropout_parameters)
 
     # measure eigenfeatures
@@ -512,9 +486,9 @@ if __name__ == '__main__':
         eigvecs.append(eigenfeatures[2])
 
     # plot results
-    plot_train_results(train_results, test_results, prms)
-    plot_dropout_results(dropout_results, prms, dropout_parameters)
-    plot_eigenfeatures(beta, eigvals, eigvecs, prms)
+    plot_train_results(train_results, test_results, prms, exp)
+    plot_dropout_results(dropout_results, prms, dropout_parameters, exp)
+    plot_eigenfeatures(beta, eigvals, eigvecs, prms, exp)
     
 
 
