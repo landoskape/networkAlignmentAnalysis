@@ -114,6 +114,35 @@ def get_maximum_strides(h_input, w_input, layer):
     w_max = int(np.floor((w_input + 2*layer.padding[1] - layer.dilation[1]*(layer.kernel_size[1] - 1) -1)/layer.stride[1] + 1))
     return h_max, w_max
 
+def correlation(output, alpha=1.0, method='var'):
+    """
+    Expects a batch x neuron tensor of output activity of a layer
+
+    Returns: 
+    1. Pairwise variance or correlation coefficient between neurons across batch dimension
+    2. Weighted(by alpha) average squared magnitude of var/corr between neurons
+    """
+    if method=='var':
+        cc = torch.cov(output.T)
+    elif method=='corr':
+        cc = torch.corrcoef(output.T)
+    else:
+        raise ValueError(f"Method ({method}) not recognized, must be 'var' or 'corr'")
+    lcc = alpha * torch.mean(torch.abs(cc)) # enforce positive in case of correlation measurement
+    return cc, lcc
+
+def correlation_linear(output, alpha=1.0, method='var'):
+    """wrapper for correlation of linear layer"""
+    return correlation(output, alpha=alpha, method=method)
+
+def correlation_convolutional(output, alpha=1.0, each_stride=True, method='var'):
+    """wrapper for correlation of convolutional layer (conv2d)"""
+    if each_stride:
+        raise ValueError("Not implemented yet")
+    else:
+        output_by_channel = output.transpose(0, 1).reshape(output.shape[1], -1) # channels x (batch*H*W)
+        return correlation(output_by_channel.T, alpha=alpha, method=method)
+    
 def avg_align_by_layer(full):
     """
     return average alignment per layer across training
