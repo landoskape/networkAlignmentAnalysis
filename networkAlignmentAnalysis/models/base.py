@@ -213,6 +213,7 @@ class AlignmentNetwork(nn.Module, ABC):
                 correlation.append(ccorr[1])
             else:
                 correlation.append(ccorr[0])
+        return correlation
 
     @torch.no_grad()
     def forward_targeted_dropout(self, x, idxs=None, layers=None):

@@ -114,7 +114,7 @@ def get_maximum_strides(h_input, w_input, layer):
     w_max = int(np.floor((w_input + 2*layer.padding[1] - layer.dilation[1]*(layer.kernel_size[1] - 1) -1)/layer.stride[1] + 1))
     return h_max, w_max
 
-def correlation(output, alpha=1.0, method='var'):
+def correlation(output, alpha=1.0, method='corr'):
     """
     Expects a batch x neuron tensor of output activity of a layer
 
@@ -131,11 +131,11 @@ def correlation(output, alpha=1.0, method='var'):
     lcc = alpha * torch.mean(torch.abs(cc)) # enforce positive in case of correlation measurement
     return cc, lcc
 
-def correlation_linear(output, alpha=1.0, method='var'):
+def correlation_linear(output, alpha=1.0, method='corr'):
     """wrapper for correlation of linear layer"""
     return correlation(output, alpha=alpha, method=method)
 
-def correlation_convolutional(output, alpha=1.0, each_stride=True, method='var'):
+def correlation_convolutional(output, alpha=1.0, each_stride=True, method='corr'):
     """wrapper for correlation of convolutional layer (conv2d)"""
     if each_stride:
         raise ValueError("Not implemented yet")
