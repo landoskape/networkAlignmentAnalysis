@@ -15,7 +15,7 @@ from argparse import ArgumentParser
 from matplotlib import pyplot as plt
 import matplotlib as mpl
 
-from networkAlignmentAnalysis import files
+from networkAlignmentAnalysis.experiments.base import Experiment
 from networkAlignmentAnalysis.models.registry import get_model
 from networkAlignmentAnalysis.datasets import get_dataset
 from networkAlignmentAnalysis import train
@@ -23,63 +23,29 @@ from networkAlignmentAnalysis.utils import avg_align_by_layer, compute_stats_by_
 
 DEVICE = 'cuda' if torch.cuda.is_available() else 'cpu'
 
-BASE_NAME = 'alignment_comparison'
-NETWORK_PATH = files.results_path() / BASE_NAME
-RESULTS_PATH = files.results_path() / BASE_NAME
-
-# register the timestamp of the run everytime this file is executed
-def register_timestamp():
-    return datetime.now().strftime("%Y%m%d_%H%M%S")
-
-def get_path(args, name, network=False):
-    """Method for retrieving paths for saving networks or data"""
-    base_path = NETWORK_PATH if network else RESULTS_PATH
-    exp_path = base_path / args.comparison # path to this experiment 
-
-    # use timestamp to save each run independently (or not to have a "master" run)
-    if args.use_timestamp:
-        exp_path = exp_path / run_timestamp 
-
-     # Make experiment directory if it doesn't yet exist
-    if not exp_path.exists(): 
-        exp_path.mkdir(parents=True)
-
-    # return full path (including stem)
-    return exp_path / name
-
-
-def get_args():
-    """Contained method for defining and parsing arguments for programmatic runs"""
-    parser = ArgumentParser(description='alignment_comparison')
+class OptimizeTransfer(Experiment):
+    def get_basename(self):
+        return 'optimize_transfer'
     
-    parser.add_argument('--network', type=str, default='MLP') # what base network architecture to use
-    parser.add_argument('--dataset', type=str, default='MNIST') # what dataset to use
-
-    # main experiment parameters
-    # -- the "comparison" determines what should be compared by the script --
-    # -- right now, only the learning rate is possible to compare --
-    parser.add_argument('--comparison', type=str, default='lr') # what comparison to do
-    parser.add_argument('--lrs', type=float, nargs='*', default=[1e-2, 1e-3, 1e-4]) # which learning rates to use
-
-    # progressive dropout parameters
-    parser.add_argument('--num_drops', type=int, default=9, help='number of dropout fractions for progressive dropout')
-    parser.add_argument('--dropout_by_layer', default=False, action='store_true', 
-                        help='whether to do progressive dropout by layer or across all layers')
+    def prepare_path(self):
+        return [self.args.comparison, self.args.network, self.args.dataset]
     
-    # some metaparameters for the experiment
-    parser.add_argument('--epochs', type=int, default=100) # how many rounds of training to do
-    parser.add_argument('--replicates', type=int, default=10) # how many copies of identical networks to train
-    
-    # saving parameters
-    parser.add_argument('--nosave', default=False, action='store_true')
-    parser.add_argument('--use-timestamp', default=False, action='store_true')
-    parser.add_argument('--save-networks', default=False, action='store_true')
-    
-    # any additional argument checks go here:
-    args = parser.parse_args()
+    def make_args(self, parser):
+        parser.add_argument('--network', type=str, default='MLP') # what base network architecture to use
+        parser.add_argument('--dataset', type=str, default='MNIST') # what dataset to use
 
-    # return parsed arguments
-    return args
+        # main experiment parameters
+
+        # supporting parameters experiments
+
+        # default parameters (if not controlled by the experiment parameters)
+        
+        # some metaparameters for the experiment
+        parser.add_argument('--epochs', type=int, default=100) # how many rounds of training to do
+        parser.add_argument('--replicates', type=int, default=10) # how many copies of identical networks to train
+        
+        # return parser
+        return parser
 
 
 def load_networks(args):
@@ -134,21 +100,18 @@ def train_networks(nets, optimizers, dataset, args):
 
 if __name__ == '__main__':
 
-    # run parameters
-    args = get_args()
-
-    # get timestamp
-    run_timestamp = register_timestamp()
+     # Create experiment 
+    exp = OptimizeTransfer()
 
     # get networks
-    nets, optimizers, prms = load_networks(args)
+    nets, optimizers, prms = load_networks(exp)
 
     # load dataset
-    standard_transform = nets[0].get_transform_parameters(args.dataset)
-    dataset = load_dataset(args, standard_transform)
+    standard_transform = nets[0].get_transform_parameters(exp.args.dataset)
+    dataset = load_dataset(exp, standard_transform)
 
     # do training 
-    train_results, test_results, prms = train_networks(nets, optimizers, dataset, args)
+    train_results, test_results, prms = train_networks(nets, optimizers, dataset, exp)
 
     # --- test networks at current stage of training on permuted MNIST ---
     def permute_pixels(batch, permute_idx=None):
@@ -158,7 +121,7 @@ if __name__ == '__main__':
     # --- add extra transform to be done during "unwrap_batch" stage (implemented by DataSet)
     permute_transform = copy(standard_transform)
     permute_transform['extra_transform'] = partial(permute_pixels, permute_idx=torch.randperm(784))
-    permute_dataset = load_dataset(args, permute_transform)
+    permute_dataset = load_dataset(exp, permute_transform)
 
     # plot results -- will need to rewrite this -- 
     # plot_train_results(train_results, test_results, prms)
