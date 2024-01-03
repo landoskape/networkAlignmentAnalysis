@@ -265,8 +265,8 @@ def plot_train_results(train_results, test_results, prms, exp):
     fig, ax = plt.subplots(1, num_layers, figsize=(num_layers*figdim, figdim), layout='constrained', sharex=True)
     for idx, label in enumerate(labels):
         for layer in range(num_layers):
-            cmn = corr_mean[idx, :, layer] * 100
-            cse = corr_se[idx, :, layer] * 100
+            cmn = corr_mean[idx, :, layer]
+            cse = corr_se[idx, :, layer]
             ax[layer].plot(range(num_train_epochs), cmn, color=cmap(idx), label=label)
             ax[layer].fill_between(range(num_train_epochs), cmn+cse, cmn-cse, color=(cmap(idx), alpha))
 

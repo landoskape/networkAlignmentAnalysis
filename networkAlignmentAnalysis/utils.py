@@ -12,6 +12,17 @@ def check_iterable(val):
     else:
         return True
 
+def smartcorr(input):
+    """
+    Performs torch corrcoef on the input data but sets each pair-wise correlation coefficent
+    to 0 where the activity has no variance (var=0) for a particular dimension (replaces nans with zeros)sss
+    """
+    idx_zeros = torch.where(torch.std(input,axis=0)==0)[0]
+    cc = torch.corrcoef(input)
+    cc[idx_zeros,:] = 0
+    cc[:,idx_zeros] = 0
+    return cc
+
 def alignment(input, weight, method='alignment'):
     """
     measure alignment (proportion variance explained) between **input** and **weight**
@@ -42,10 +53,7 @@ def alignment(input, weight, method='alignment'):
     if method=='alignment':
         cc = torch.cov(input.T)
     elif method=='similarity':
-        idx_no_activity = torch.where(torch.std(input,axis=0)==0)[0]
-        cc = torch.corrcoef(input.T)
-        cc[idx_no_activity,:] = 0
-        cc[:,idx_no_activity] = 0
+        cc = smartcorr(input.T)
     else: 
         raise ValueError(f"did not recognize method ({method}), must be 'alignment' or 'similarity'")
     # Compute rayleigh quotient
@@ -125,7 +133,7 @@ def correlation(output, alpha=1.0, method='corr'):
     if method=='var':
         cc = torch.cov(output.T)
     elif method=='corr':
-        cc = torch.corrcoef(output.T)
+        cc = smartcorr(output.T)
     else:
         raise ValueError(f"Method ({method}) not recognized, must be 'var' or 'corr'")
     lcc = alpha * torch.mean(torch.abs(cc)) # enforce positive in case of correlation measurement
