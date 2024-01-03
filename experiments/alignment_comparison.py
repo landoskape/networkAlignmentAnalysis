@@ -13,7 +13,6 @@ from argparse import ArgumentParser
 from matplotlib import pyplot as plt
 import matplotlib as mpl
 
-from networkAlignmentAnalysis import files
 from networkAlignmentAnalysis.experiments.base import Experiment
 from networkAlignmentAnalysis.models.registry import get_model
 from networkAlignmentAnalysis.datasets import get_dataset
