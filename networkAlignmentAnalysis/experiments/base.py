@@ -15,6 +15,7 @@ class Experiment(ABC):
         print(f"Experiment object created.")
         print(f"basename: {self.basename}")
         print(f"basepath: {self.basepath}")
+        print(f"experiment folder: {'/'.join(self.prepare_path())}")
         print(f"Saving results: {not self.args.nosave}")
         print(f"Saving networks: {self.args.save_networks}")
 
@@ -22,7 +23,7 @@ class Experiment(ABC):
         """Method for returning formatted timestamp"""
         self.init_time = datetime.now().strftime("%Y%m%d_%H%M%S")
 
-    def get_path(self, name):
+    def get_path(self, name, create=True):
         """Method for returning path to file using prepare_path directory and a file name"""
         exp_path = copy(self.basepath)
         for app_dir in self.prepare_path():
@@ -33,7 +34,7 @@ class Experiment(ABC):
             exp_path = exp_path / self.init_time
 
         # Make experiment directory if it doesn't yet exist
-        if not exp_path.exists(): 
+        if create and not(exp_path.exists()): 
             exp_path.mkdir(parents=True)
 
         # return full path (including stem)
