@@ -32,7 +32,7 @@ def register_timestamp():
 def get_path(args, name, network=False):
     """Method for retrieving paths for saving networks or data"""
     base_path = NETWORK_PATH if network else RESULTS_PATH
-    exp_path = base_path / args.comparison # path to this experiment 
+    exp_path = base_path / args.comparison / args.network / args.dataset # path to this experiment 
 
     # use timestamp to save each run independently (or not to have a "master" run)
     if args.use_timestamp:
@@ -55,9 +55,20 @@ def get_args():
 
     # main experiment parameters
     # -- the "comparison" determines what should be compared by the script --
-    # -- right now, only the learning rate is possible to compare --
-    parser.add_argument('--comparison', type=str, default='lr') # what comparison to do
+    # -- depending on selection, something about the networks are varied throughout the experiment --
+    parser.add_argument('--comparison', type=str, default='lr') # what comparison to do (see load_networks for options)
+    parser.add_argument('--regularizers', type=str, nargs='*', default=['none', 'dropout', 'weight_decay'])
     parser.add_argument('--lrs', type=float, nargs='*', default=[1e-2, 1e-3, 1e-4]) # which learning rates to use
+    parser.add_argument('--noises', type=float, nargs='*', default=[1e-1, 1, 2]) # the (relative) std of noise to use
+
+    # supporting parameters for some of the "comparisons"
+    parser.add_argument('--compare-dropout', type=float, default=0.5) # dropout when doing regularizer comparison
+    parser.add_argument('--compare-wd', type=float, default=1e-5) # weight-decay when doing regularizer comparison
+
+    # default parameters (if not controlled by the comparison)
+    parser.add_argument('--default-lr', type=float, default=1e-3) # default learning rate
+    parser.add_argument('--default-dropout', type=float, default=0) # default dropout rate
+    parser.add_argument('--default-wd', type=float, default=0) # default weight decay
 
     # progressive dropout parameters
     parser.add_argument('--num_drops', type=int, default=9, help='number of dropout fractions for progressive dropout')
@@ -94,9 +105,10 @@ def load_networks(args):
     # compare learning rates
     if args.comparison == 'lr':
         lrs = [lr for lr in args.lrs for _ in range(args.replicates)]
-        nets = [model_constructor() for _ in lrs]
+        nets = [model_constructor(dropout=args.default_dropout) for _ in lrs]
         nets = [net.to(DEVICE) for net in nets]
-        optimizers = [torch.optim.Adam(net.parameters(), lr=lr) for net, lr in zip(nets, lrs)]
+        optimizers = [torch.optim.Adam(net.parameters(), lr=lr, weight_decay=args.default_wd)
+                      for net, lr in zip(nets, lrs)]
         prms = {
             'lrs': lrs, # the value of the independent variable for each network
             'name': 'lr', # the name of the parameter being varied
@@ -104,6 +116,37 @@ def load_networks(args):
         }
         return nets, optimizers, prms
     
+    # compare training with input noise
+    elif args.comparison == 'noise':
+        noises = [nnorm for nnorm in args.noises for _ in range(args.replicates)]
+        nets = [model_constructor(dropout=args.default_dropout) for _ in noises]
+        nets = [net.to(DEVICE) for net in nets]
+        optimizers = [torch.optim.Adam(net.parameters(), lr=args.default_lr) for net in nets]
+        prms = {
+            'noises': noises, # the std of noise (relative to input std) added to the dataset
+            'name': 'input_noise', # the name of the parameter being varied
+            'vals': args.noises, # the list of unique values for the relevant parameter
+        }
+        return nets, optimizers, prms
+    
+    # compare training with different regularizers
+    elif args.comparison == 'regularizer':
+        dropout_values = [args.compare_dropout * (reg == 'dropout') for reg in args.regularizers]
+        weight_decay_values = [args.compare_wd * (reg == 'weight_decay') for reg in args.regularizers]
+        dropouts = [do for do in dropout_values for _ in range(args.replicates)]
+        weight_decays = [wd for wd in weight_decay_values for _ in range(args.replicates)]
+        nets = [model_constructor(dropout=do) for do in dropouts]
+        nets = [net.to(DEVICE) for net in nets]
+        optimizers = [torch.optim.Adam(net.parameters(), lr=args.default_lr, weight_decay=wd)
+                      for net, wd in zip(nets, weight_decays)]
+        prms = {
+            'dropouts': dropouts, # dropout values by network
+            'weight_decays': weight_decays, # weight decay values by network
+            'name': 'regularizer', # name of experiment
+            'vals': args.regularizers, # name of unique regularizers
+        }
+        return nets, optimizers, prms
+
     else:
         raise ValueError(f"Comparison={args.comparision} is not recognized")
     
@@ -207,7 +250,7 @@ def plot_train_results(train_results, test_results, prms):
     ax[3].set_title('Testing')
     ax[3].set_xlim(-0.5, num_types-0.5)
     ax[3].set_ylim(0, 100)
-    
+
     if not args.nosave:
         plt.savefig(str(get_path(args, 'train_test_performance')))
 

@@ -109,8 +109,21 @@ class AlignmentNetwork(nn.Module, ABC):
                 self.hidden.append(x)
         return x
     
+    def get_dropout(self): 
+        """
+        Return list of dropout probability for any dropout layers in network
+        """
+        p = []
+        for module in self.modules():
+            if isinstance(module, nn.Dropout):
+                p.append(module.p)
+        return p
+    
     def set_dropout(self, p=0.5):
-        """convenience method for setting dropout of all layers in a network"""
+        """
+        Set dropout of all layers in a network
+        Note that this will overwrite whatever was previously used
+        """
         for module in self.modules():
             if isinstance(module, nn.Dropout):
                 module.p = p
@@ -285,6 +298,7 @@ class AlignmentNetwork(nn.Module, ABC):
                 unfolded_input = torch.nn.functional.unfold(input, layer.kernel_size, **layer_prms)
                 unfolded_input = unfolded_input.transpose(1, 2).reshape(input.size(0), -1)
                 inputs_to_layers[ii] = unfolded_input
+
             else:
                 # if not unfolding weights, just add them directly
                 weights.append(weight)

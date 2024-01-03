@@ -106,7 +106,7 @@ class AlexNet(AlignmentNetwork):
       )
     )
     """
-    def initialize(self, num_classes=1000, weights=None, each_stride=True):
+    def initialize(self, dropout=0.5, num_classes=1000, weights=None, each_stride=True):
         """architecture definition"""
 
         # start by loading the architecture of alexnet along with pretrained weights (if requested)
@@ -141,6 +141,9 @@ class AlexNet(AlignmentNetwork):
         self.register_layer(layer6, **default_metaprms_linear(1))
         self.register_layer(layer7, **default_metaprms_linear(1))
         self.register_layer(layer8, **default_metaprms_linear(0))
+
+        # set dropout with general method so we can easily use each alexnet.features/classifier/etc
+        self.set_dropout(dropout)
 
     def get_transform_parameters(self, dataset):
         """Alexnet specific transformations for each dataset"""
