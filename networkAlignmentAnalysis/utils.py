@@ -29,7 +29,7 @@ def smartcorr(input):
     Performs torch corrcoef on the input data but sets each pair-wise correlation coefficent
     to 0 where the activity has no variance (var=0) for a particular dimension (replaces nans with zeros)sss
     """
-    idx_zeros = torch.where(torch.std(input,axis=0)==0)[0]
+    idx_zeros = torch.var(input, dim=1)==0
     cc = torch.corrcoef(input)
     cc[idx_zeros,:] = 0
     cc[:,idx_zeros] = 0
