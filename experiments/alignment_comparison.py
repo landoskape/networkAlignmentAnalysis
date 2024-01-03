@@ -155,19 +155,23 @@ def plot_train_results(train_results, test_results, prms, exp):
     num_types = len(prms['vals'])
     labels = [f"{prms['name']}={val}" for val in prms['vals']]
     alignment = torch.stack([avg_align_by_layer(align).T for align in train_results['alignment']])
+    correlation = torch.stack([avg_align_by_layer(align).T for align in train_results['avgcorr']])
     cmap = mpl.colormaps['tab10']
 
     train_loss_mean, train_loss_se = compute_stats_by_type(train_results['loss'], 
                                                             num_types=num_types, dim=1, method='se')
     train_acc_mean, train_acc_se = compute_stats_by_type(train_results['accuracy'],
                                                             num_types=num_types, dim=1, method='se')
-    
+
     align_mean, align_se = compute_stats_by_type(alignment, num_types=num_types, dim=0, method='se')
+
+    corr_mean, corr_se = compute_stats_by_type(correlation, num_types=num_types, dim=0, method='se')
 
     test_loss_mean, test_loss_se = compute_stats_by_type(torch.tensor(test_results['loss']),
                                                             num_types=num_types, dim=0, method='se')
     test_acc_mean, test_acc_se = compute_stats_by_type(torch.tensor(test_results['accuracy']),
                                                             num_types=num_types, dim=0, method='se')
+
 
     xOffset = [-0.2, 0.2]
     get_x = lambda idx: [xOffset[0]+idx, xOffset[1]+idx]
@@ -253,6 +257,29 @@ def plot_train_results(train_results, test_results, prms, exp):
 
     if not exp.args.nosave:
         plt.savefig(str(exp.get_path('train_alignment_by_layer')))
+
+    plt.show()
+
+
+    # Make Correlation Figure
+    fig, ax = plt.subplots(1, num_layers, figsize=(num_layers*figdim, figdim), layout='constrained', sharex=True)
+    for idx, label in enumerate(labels):
+        for layer in range(num_layers):
+            cmn = corr_mean[idx, :, layer] * 100
+            cse = corr_se[idx, :, layer] * 100
+            ax[layer].plot(range(num_train_epochs), cmn, color=cmap(idx), label=label)
+            ax[layer].fill_between(range(num_train_epochs), cmn+cse, cmn-cse, color=(cmap(idx), alpha))
+
+    for layer in range(num_layers):
+        ax[layer].set_ylim(0, None)
+        ax[layer].set_xlabel('Training Epoch')
+        ax[layer].set_ylabel('Correlation')
+        ax[layer].set_title(f"Layer {layer}")
+
+    ax[0].legend(loc='lower right')
+
+    if not exp.args.nosave:
+        plt.savefig(str(exp.get_path('train_correlation_by_layer')))
 
     plt.show()
 
