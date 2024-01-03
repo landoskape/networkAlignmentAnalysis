@@ -138,6 +138,7 @@ class MNIST(DataSet):
         self.dataset_path = files.dataset_path("MNIST")
         self.dataset_constructor = torchvision.datasets.MNIST
         self.loss_function = nn.CrossEntropyLoss()
+        self.dist_params = dict(mean=0.1307, std=0.3081)
 
     def make_transform(self, resize=None, flatten=False):
         """
@@ -147,8 +148,10 @@ class MNIST(DataSet):
         """
         # default transforms
         use_transforms = [
-            transforms.ToTensor(), # Convert PIL Image to PyTorch Tensor
-            transforms.Normalize((0.1307,), (0.3081,)), # Normalize inputs to canonical distribution
+            # Convert PIL Image to PyTorch Tensor
+            transforms.ToTensor(), 
+            # Normalize inputs to canonical distribution
+            transforms.Normalize((self.dist_params['mean'],), (self.dist_params['std'],)), 
             ]
         
         # extra transforms depending on network
@@ -175,8 +178,16 @@ DATASET_REGISTRY = {
     'MNIST': MNIST,
 }
 
-def get_dataset(dataset_name):
-    """lookup dataset constructor from dataset registry by name"""
+def get_dataset(dataset_name, build=False, **kwargs):
+    """
+    lookup dataset constructor from dataset registry by name
+
+    if build=True, uses kwargs to build dataset and returns a dataset object
+    otherwise just returns the constructor
+    """
     if dataset_name not in DATASET_REGISTRY: 
         raise ValueError(f"Dataset ({dataset_name}) is not in DATASET_REGISTRY")
-    return DATASET_REGISTRY[dataset_name]
+    dataset = DATASET_REGISTRY[dataset_name]
+    if build:
+        return dataset(**kwargs)
+    return dataset
