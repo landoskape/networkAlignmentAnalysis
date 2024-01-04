@@ -81,6 +81,7 @@ def train(nets, optimizers, dataset, **parameters):
             if measure_fullcorr:
                 fullcorr.append([net.measure_correlation(images, precomputed=True, alpha=1.0, reduced=False) for net in nets])
     
+    # create results dictionary
     results = {
         'loss': track_loss,
         'accuracy': track_accuracy,
@@ -133,7 +134,7 @@ def test(nets, dataset, **parameters):
         # Keep track of number of batches
         num_batches += 1
 
-        # Measure Integration
+        # Measure Alignment
         alignment.append([net.measure_alignment(images, precomputed=True, method='alignment')
                           for net in nets])
     

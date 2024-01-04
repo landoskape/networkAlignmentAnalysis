@@ -40,7 +40,7 @@ if __name__ == '__main__':
         exp.report(args=True)
 
     # Plot results
-    if not exp.arg.showprms:
+    if not exp.args.showprms:
         exp.plot(results)
         
         if exp.args.showall:

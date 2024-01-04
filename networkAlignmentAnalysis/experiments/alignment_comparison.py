@@ -41,7 +41,7 @@ class AlignmentComparison(Experiment):
         parser.add_argument('--compare-wd', type=float, default=1e-5) # weight-decay when doing regularizer comparison
 
         # default parameters (if not controlled by the comparison)
-        parser.add_argument('--default-lr', type=float, default=1e-2) # default learning rate
+        parser.add_argument('--default-lr', type=float, default=3e-2) # default learning rate
         parser.add_argument('--default-dropout', type=float, default=0) # default dropout rate
         parser.add_argument('--default-wd', type=float, default=0) # default weight decay
 
