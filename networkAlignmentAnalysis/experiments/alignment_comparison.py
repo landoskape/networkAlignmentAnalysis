@@ -220,6 +220,8 @@ class AlignmentComparison(Experiment):
         num_train_epochs = train_results['loss'].size(0)
         num_types = len(prms['vals'])
         labels = [f"{prms['name']}={val}" for val in prms['vals']]
+
+        print("getting statistics on run data...")
         alignment = torch.stack([avg_value_by_layer(align).T for align in train_results['alignment']])
         correlation = torch.stack([avg_value_by_layer(align).T for align in train_results['avgcorr']])
         cmap = mpl.colormaps['tab10']
@@ -239,6 +241,7 @@ class AlignmentComparison(Experiment):
                                                                 num_types=num_types, dim=0, method='se')
 
 
+        print("plotting run data...")
         xOffset = [-0.2, 0.2]
         get_x = lambda idx: [xOffset[0]+idx, xOffset[1]+idx]
 
@@ -356,6 +359,7 @@ class AlignmentComparison(Experiment):
         extra_name = 'by_layer' if by_layer else 'all_layers'
 
         # Get statistics across each network type for progressive dropout experiment
+        print("measuring statistics on dropout analysis...")
         loss_mean_high, loss_se_high = compute_stats_by_type(dropout_results['progdrop_loss_high'], 
                                                                 num_types=num_types, dim=0, method='se')
         loss_mean_low, loss_se_low = compute_stats_by_type(dropout_results['progdrop_loss_low'], 
@@ -377,6 +381,7 @@ class AlignmentComparison(Experiment):
         acc_se = [acc_se_high, acc_se_low, acc_se_rand]
 
 
+        print("plotting dropout results...")
         # Plot Loss for progressive dropout experiment
         fig, ax = plt.subplots(num_layers, num_types, figsize=(num_types*figdim, num_layers*figdim), sharex=True, sharey=True, layout='constrained')
         ax = np.reshape(ax, (num_layers, num_types))
@@ -443,6 +448,8 @@ class AlignmentComparison(Experiment):
         labels = [f"{prms['name']}={val}" for val in prms['vals']]
         cmap = mpl.colormaps['tab10']
 
+        print("measuring statistics of eigenfeature analyses...")
+
         # shape wrangling
         beta = [torch.stack(b) for b in transpose_list(beta)]
         eigvals = [torch.stack(ev) for ev in transpose_list(eigvals)]
@@ -465,6 +472,7 @@ class AlignmentComparison(Experiment):
         mean_beta, se_beta = named_transpose([compute_stats_by_type(b, **statprms('var')) for b in beta])
         mean_sorted, se_sorted = named_transpose([compute_stats_by_type(b, **statprms('var')) for b in sorted_beta])
 
+        print("plotting eigenfeature results...")
         figdim = 3
         alpha = 0.3
         num_layers = len(mean_beta)
