@@ -13,16 +13,10 @@ if __name__ == '__main__':
 
     # Create experiment 
     exp = create_experiment()
-    
-    # Show results unless only printing arguments
-    show_results = True
 
     if exp.args.showprms:
         # Load saved experiment
         _ = exp.load_experiment()
-
-        # Don't show results
-        show_results = False
 
     elif not exp.args.justplot:
         # Report experiment details
@@ -46,7 +40,7 @@ if __name__ == '__main__':
         exp.report(args=True)
 
     # Plot results
-    if show_results:
+    if not exp.arg.showprms:
         exp.plot(results)
         
         if exp.args.showall:
