@@ -16,7 +16,7 @@ class AlignmentComparison(Experiment):
         return 'alignment_comparison'
     
     def prepare_path(self):
-        return [self.args.comparison, self.args.network, self.args.dataset]
+        return [self.args.comparison, self.args.network, self.args.dataset, self.args.optimizer]
     
     def make_args(self, parser):
         """
@@ -26,6 +26,7 @@ class AlignmentComparison(Experiment):
         # Network & Dataset
         parser.add_argument('--network', type=str, default='MLP') # what base network architecture to use
         parser.add_argument('--dataset', type=str, default='MNIST') # what dataset to use
+        parser.add_argument('--optimizer', type=str, default='Adam') # what optimizer to train with 
 
         # main experiment parameters
         # -- the "comparison" determines what should be compared by the script --
@@ -125,12 +126,20 @@ class AlignmentComparison(Experiment):
         """
         model_constructor = get_model(self.args.network)
 
+        # get optimizer
+        if self.args.optimizer == 'Adam':
+            optim = torch.optim.Adam
+        elif self.args.optimizer == 'SGD':
+            optim = torch.optim.SGD
+        else:
+            raise ValueError(f"optimizer ({self.args.optimizer}) not recognized")
+        
         # compare learning rates
         if self.args.comparison == 'lr':
             lrs = [lr for lr in self.args.lrs for _ in range(self.args.replicates)]
             nets = [model_constructor(dropout=self.args.default_dropout) for _ in lrs]
             nets = [net.to(self.device) for net in nets]
-            optimizers = [torch.optim.Adam(net.parameters(), lr=lr, weight_decay=self.args.default_wd)
+            optimizers = [optim(net.parameters(), lr=lr, weight_decay=self.args.default_wd)
                         for net, lr in zip(nets, lrs)]
             prms = {
                 'lrs': lrs, # the value of the independent variable for each network
@@ -144,7 +153,7 @@ class AlignmentComparison(Experiment):
             noises = [nnorm for nnorm in self.args.noises for _ in range(self.args.replicates)]
             nets = [model_constructor(dropout=self.rgs.default_dropout) for _ in noises]
             nets = [net.to(self.device) for net in nets]
-            optimizers = [torch.optim.Adam(net.parameters(), lr=self.args.default_lr) for net in nets]
+            optimizers = [optim(net.parameters(), lr=self.args.default_lr) for net in nets]
             prms = {
                 'noises': noises, # the std of noise (relative to input std) added to the dataset
                 'name': 'input_noise', # the name of the parameter being varied
@@ -160,7 +169,7 @@ class AlignmentComparison(Experiment):
             weight_decays = [wd for wd in weight_decay_values for _ in range(self.args.replicates)]
             nets = [model_constructor(dropout=do) for do in dropouts]
             nets = [net.to(self.device) for net in nets]
-            optimizers = [torch.optim.Adam(net.parameters(), lr=self.args.default_lr, weight_decay=wd)
+            optimizers = [optim(net.parameters(), lr=self.args.default_lr, weight_decay=wd)
                         for net, wd in zip(nets, weight_decays)]
             prms = {
                 'dropouts': dropouts, # dropout values by network
