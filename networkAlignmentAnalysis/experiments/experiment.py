@@ -1,5 +1,5 @@
 from datetime import datetime
-from copy import copy
+from pathlib import Path
 from argparse import ArgumentParser
 from abc import ABC, abstractmethod 
 from typing import Tuple, Dict, List
@@ -27,7 +27,7 @@ class Experiment(ABC):
             print(f"Experiment object details:")
             print(f"basename: {self.basename}")
             print(f"basepath: {self.basepath}")
-            print(f"experiment folder: {'/'.join(self.prepare_path())}")
+            print(f"experiment folder: {self.get_exp_path()}")
             print('using device: ', self.device)
 
             # Report any other relevant details
@@ -53,21 +53,18 @@ class Experiment(ABC):
         If timestamp not provided, then the current time is formatted and used to identify this particular experiment.
         If the timestamp is provided, then that time is used and should identify a previously run and saved experiment.
         """
-        self.timestamp = self.args.timestamp if self.args.timestamp is not None else datetime.now().strftime("%Y%m%d_%H%M%S")
-
-    def get_dir(self, create=True):
+        if self.args.timestamp is not None:
+            self.timestamp = self.args.timestamp
+        else:
+            self.timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            self.args.timestamp = self.timestamp
+            
+    def get_dir(self, create=True) -> Path:
         """
         Method for return directory of target file using prepare_path.
         """
-        # exp_path is the base path followed by whatever folders define this particular experiment
-        # (usually things like ['network_name', 'dataset_name', 'test', 'etc'])
-        exp_path = copy(self.basepath)
-        for app_dir in self.prepare_path():
-            exp_path /= app_dir
-
-        # use timestamp to save each run independently (or not to have a "master" run)
-        if self.args.use_timestamp:
-            exp_path = exp_path / self.timestamp
+        # Make full path to experiment directory
+        exp_path = self.basepath / self.get_exp_path()
 
         # Make experiment directory if it doesn't yet exist
         if create and not(exp_path.exists()): 
@@ -75,7 +72,20 @@ class Experiment(ABC):
 
         return exp_path
     
-    def get_path(self, name, create=True):
+    def get_exp_path(self) -> Path:
+        """Method for returning child directories of this experiment"""
+        # exp_path is the base path followed by whatever folders define this particular experiment
+        # (usually things like ['network_name', 'dataset_name', 'test', 'etc'])
+        exp_path = Path('/'.join(self.prepare_path()))
+        
+        # if requested, will also use a timestamp to distinguish this run from others
+        if self.args.use_timestamp:
+            exp_path = exp_path / self.timestamp
+
+        return exp_path
+
+    
+    def get_path(self, name, create=True) -> Path:
         """Method for returning path to file"""
         # get experiment directory
         exp_path = self.get_dir(create=create)
