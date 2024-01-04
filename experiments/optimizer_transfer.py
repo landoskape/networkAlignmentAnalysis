@@ -15,7 +15,7 @@ from argparse import ArgumentParser
 from matplotlib import pyplot as plt
 import matplotlib as mpl
 
-from networkAlignmentAnalysis.experiments.base import Experiment
+from networkAlignmentAnalysis.experiments.experiment import Experiment
 from networkAlignmentAnalysis.models.registry import get_model
 from networkAlignmentAnalysis.datasets import get_dataset
 from networkAlignmentAnalysis import train

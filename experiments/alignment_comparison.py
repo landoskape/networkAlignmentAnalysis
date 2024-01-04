@@ -4,16 +4,14 @@ import os
 # add path that contains the alignment package
 sys.path.append(os.path.dirname(os.path.abspath(__file__)) + "/..")
 
-from datetime import datetime
 import numpy as np
 from tqdm import tqdm
 import torch
-from argparse import ArgumentParser
 
 from matplotlib import pyplot as plt
 import matplotlib as mpl
 
-from networkAlignmentAnalysis.experiments.base import Experiment
+from networkAlignmentAnalysis.experiments.experiment import Experiment
 from networkAlignmentAnalysis.models.registry import get_model
 from networkAlignmentAnalysis.datasets import get_dataset
 from networkAlignmentAnalysis import train
@@ -147,7 +145,7 @@ def train_networks(nets, optimizers, dataset, exp):
     parameters['train_set'] = False
     test_results = train.test(nets, dataset, **parameters)
 
-    return train_results, test_results, prms
+    return train_results, test_results
 
 
 def plot_train_results(train_results, test_results, prms, exp):
@@ -495,7 +493,7 @@ if __name__ == '__main__':
     dataset = load_dataset(exp, nets[0].get_transform_parameters(exp.args.dataset))
 
     # do training 
-    train_results, test_results, prms = train_networks(nets, optimizers, dataset, exp)
+    train_results, test_results = train_networks(nets, optimizers, dataset, exp)
 
     # do targeted dropout experiment
     print('performing targeted dropout...')
