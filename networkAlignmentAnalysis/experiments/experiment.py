@@ -57,8 +57,9 @@ class Experiment(ABC):
             self.timestamp = self.args.timestamp
         else:
             self.timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            self.args.timestamp = self.timestamp
-            
+            if self.args.use_timestamp:
+                self.args.timestamp = self.timestamp
+
     def get_dir(self, create=True) -> Path:
         """
         Method for return directory of target file using prepare_path.
@@ -125,17 +126,21 @@ class Experiment(ABC):
         parser.add_argument('--justplot', default=False, action='store_true')
         parser.add_argument('--save-networks', default=False, action='store_true')
         parser.add_argument('--showprms', default=False, action='store_true')
+        parser.add_argument('--showall', default=False, action='store_true', help='if true, will show all plots at once rather than having the user close each one for the next')
 
         # add meta arguments 
-        self.meta_args += ['nosave', 'justplot', 'save_networks', 'showprms']
+        self.meta_args += ['nosave', 'justplot', 'save_networks', 'showprms', 'showall']
         
         # common parameters that shouldn't be updated when loading old experiment
         parser.add_argument('--use-timestamp', default=False, action='store_true')
         parser.add_argument('--timestamp', default=None, help='the timestamp of a previous experiment to plot or observe parameters')
-        parser.add_argument('--showall', default=False, action='store_true', help='if true, will show all plots at once rather than having the user close each one for the next')
-
+        
         # parse known arguments
         self.args = parser.parse_known_args()[0]
+
+        # do checks
+        if self.args.use_timestamp and self.args.justplot:
+            assert self.args.timestamp is not None, "if use_timestamp=True and plotting stored results, must provide a timestamp"
     
     @abstractmethod
     def make_args(self, parser) -> ArgumentParser:
