@@ -26,14 +26,14 @@ class AlignmentComparison(Experiment):
         # Network & Dataset
         parser.add_argument('--network', type=str, default='MLP') # what base network architecture to use
         parser.add_argument('--dataset', type=str, default='MNIST') # what dataset to use
-        parser.add_argument('--optimizer', type=str, default='Adam') # what optimizer to train with 
+        parser.add_argument('--optimizer', type=str, default='SGD') # what optimizer to train with
 
         # main experiment parameters
         # -- the "comparison" determines what should be compared by the script --
         # -- depending on selection, something about the networks are varied throughout the experiment --
         parser.add_argument('--comparison', type=str, default='lr') # what comparison to do (see load_networks for options)
         parser.add_argument('--regularizers', type=str, nargs='*', default=['none', 'dropout', 'weight_decay'])
-        parser.add_argument('--lrs', type=float, nargs='*', default=[1e-2, 1e-3, 1e-4]) # which learning rates to use
+        parser.add_argument('--lrs', type=float, nargs='*', default=[1e-1, 3e-2, 5e-3]) # which learning rates to use
         parser.add_argument('--noises', type=float, nargs='*', default=[1e-1, 1, 2]) # the (relative) std of noise to use
 
         # supporting parameters for some of the "comparisons"
@@ -41,7 +41,7 @@ class AlignmentComparison(Experiment):
         parser.add_argument('--compare-wd', type=float, default=1e-5) # weight-decay when doing regularizer comparison
 
         # default parameters (if not controlled by the comparison)
-        parser.add_argument('--default-lr', type=float, default=1e-3) # default learning rate
+        parser.add_argument('--default-lr', type=float, default=1e-2) # default learning rate
         parser.add_argument('--default-dropout', type=float, default=0) # default dropout rate
         parser.add_argument('--default-wd', type=float, default=0) # default weight decay
 
