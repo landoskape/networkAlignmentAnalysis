@@ -222,8 +222,9 @@ class AlignmentComparison(Experiment):
         labels = [f"{prms['name']}={val}" for val in prms['vals']]
 
         print("getting statistics on run data...")
-        alignment = torch.stack([avg_value_by_layer(align).T for align in train_results['alignment']])
-        correlation = torch.stack([avg_value_by_layer(align).T for align in train_results['avgcorr']])
+        alignment = torch.stack([torch.mean(align, dim=2) for align in train_results['alignment']])
+        correlation = torch.stack([torch.mean(corr, dim=2) for corr in train_results['avgcorr']])
+        
         cmap = mpl.colormaps['tab10']
 
         train_loss_mean, train_loss_se = compute_stats_by_type(train_results['loss'], 
@@ -231,9 +232,9 @@ class AlignmentComparison(Experiment):
         train_acc_mean, train_acc_se = compute_stats_by_type(train_results['accuracy'],
                                                                 num_types=num_types, dim=1, method='se')
 
-        align_mean, align_se = compute_stats_by_type(alignment, num_types=num_types, dim=0, method='se')
+        align_mean, align_se = compute_stats_by_type(alignment, num_types=num_types, dim=1, method='se')
 
-        corr_mean, corr_se = compute_stats_by_type(correlation, num_types=num_types, dim=0, method='se')
+        corr_mean, corr_se = compute_stats_by_type(correlation, num_types=num_types, dim=1, method='se')
 
         test_loss_mean, test_loss_se = compute_stats_by_type(torch.tensor(test_results['loss']),
                                                                 num_types=num_types, dim=0, method='se')
@@ -303,12 +304,12 @@ class AlignmentComparison(Experiment):
         self.plot_ready('train_test_performance')
 
         # Make Alignment Figure
-        num_layers = align_mean.size(2)
+        num_layers = align_mean.size(0)
         fig, ax = plt.subplots(1, num_layers, figsize=(num_layers*figdim, figdim), layout='constrained', sharex=True)
         for idx, label in enumerate(labels):
             for layer in range(num_layers):
-                cmn = align_mean[idx, :, layer] * 100
-                cse = align_se[idx, :, layer] * 100
+                cmn = align_mean[layer, idx] * 100
+                cse = align_se[layer, idx] * 100
                 ax[layer].plot(range(num_train_epochs), cmn, color=cmap(idx), label=label)
                 ax[layer].fill_between(range(num_train_epochs), cmn+cse, cmn-cse, color=(cmap(idx), alpha))
 
@@ -327,8 +328,8 @@ class AlignmentComparison(Experiment):
         fig, ax = plt.subplots(1, num_layers, figsize=(num_layers*figdim, figdim), layout='constrained', sharex=True)
         for idx, label in enumerate(labels):
             for layer in range(num_layers):
-                cmn = corr_mean[idx, :, layer]
-                cse = corr_se[idx, :, layer]
+                cmn = corr_mean[layer, idx]
+                cse = corr_se[layer, idx]
                 ax[layer].plot(range(num_train_epochs), cmn, color=cmap(idx), label=label)
                 ax[layer].fill_between(range(num_train_epochs), cmn+cse, cmn-cse, color=(cmap(idx), alpha))
 
@@ -343,7 +344,7 @@ class AlignmentComparison(Experiment):
         self.plot_ready('train_correlation_by_layer')
 
 
-    def plot_dropout_results(self, dropout_results,dropout_parameters, prms):
+    def plot_dropout_results(self, dropout_results, dropout_parameters, prms):
         num_types = len(prms['vals'])
         labels = [f"{prms['name']}={val}" for val in prms['vals']]
         cmap = mpl.colormaps['Set1']
@@ -436,7 +437,6 @@ class AlignmentComparison(Experiment):
                 if idx==num_exp-1:
                     ax[layer, idx].legend(loc='best')
         
-        
         self.plot_ready('prog_dropout_'+extra_name+'_accuracy')
 
 
@@ -453,7 +453,6 @@ class AlignmentComparison(Experiment):
         # shape wrangling
         beta = [torch.stack(b) for b in transpose_list(beta)]
         eigvals = [torch.stack(ev) for ev in transpose_list(eigvals)]
-        eigvecs = [torch.stack(ev) for ev in transpose_list(eigvecs)]
 
         # normalize to relative values
         beta = [b / b.sum(dim=2, keepdim=True) for b in beta]
