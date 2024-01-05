@@ -12,11 +12,11 @@ from torch.cuda import is_available as cuda_available
 from .. import files
 
 class Experiment(ABC):
-    def __init__(self) -> None:
+    def __init__(self, args=None) -> None:
         """Experiment constructor"""
         self.basename = self.get_basename() # Register basename of experiment
         self.basepath = files.results_path() / self.basename # Register basepath of experiment
-        self.get_args() # Parse arguments to python program
+        self.get_args(args=args) # Parse arguments to python program
         self.register_timestamp() # Register timestamp of experiment
         self.device = 'cuda' if cuda_available() else 'cpu'
         
@@ -109,7 +109,7 @@ class Experiment(ABC):
         """
         pass
 
-    def get_args(self):
+    def get_args(self, args=None):
         """
         Method for defining and parsing arguments.
         
@@ -135,8 +135,8 @@ class Experiment(ABC):
         parser.add_argument('--use-timestamp', default=False, action='store_true')
         parser.add_argument('--timestamp', default=None, help='the timestamp of a previous experiment to plot or observe parameters')
         
-        # parse known arguments
-        self.args = parser.parse_known_args()[0]
+        # parse arguments (passing directly because initial parser will remove the "--experiment" argument)
+        self.args = parser.parse_args(args=args)
 
         # do checks
         if self.args.use_timestamp and self.args.justplot:
@@ -179,7 +179,7 @@ class Experiment(ABC):
         # Save experiment results
         save(self.get_results_path(), results)
 
-    def load_experiment(self):
+    def load_experiment(self, no_results=False):
         """
         Method for loading saved experiment results.
         """
@@ -193,6 +193,9 @@ class Experiment(ABC):
         prms = load(self.get_prms_path(), allow_pickle=True).item()
         self._update_args(prms)
         
+        # Don't load results if requested
+        if no_results: return None
+
         # Load and return results
         return load(self.get_results_path(), allow_pickle=True).item()
     
@@ -219,7 +222,7 @@ class Experiment(ABC):
         pass
 
     def plot_ready(self, name):
-        """method for saving and showing plot when it's ready"""
+        """standard method for saving and showing plot when it's ready"""
         # if saving, then save the plot
         if not self.args.nosave:
             savefig(str(self.get_path(name)))
