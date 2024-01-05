@@ -222,7 +222,8 @@ class Experiment(ABC):
         
         This method should perform any core training and analyses related to the experiment
         and return a results dictionary and a list of pytorch nn.Modules. The second requirement
-        (torch modules) can probably be relaxed, but doesn't need to yet so let's keep it rigid.
+        (torch modules) can probably be relaxed, but doesn't need to yet so let's keep it as is
+        for overall clarity.
         """
         pass
 
