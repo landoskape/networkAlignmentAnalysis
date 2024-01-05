@@ -3,7 +3,7 @@ from pathlib import Path
 from argparse import ArgumentParser
 from abc import ABC, abstractmethod 
 from typing import Tuple, Dict, List
-from numpy import load, save
+from torch import load, save
 from matplotlib.pyplot import savefig, show
 
 from torch.nn import Module as TorchModule
@@ -152,12 +152,12 @@ class Experiment(ABC):
         pass
 
     def get_prms_path(self):
-        """Method for loading path to experiment parameters"""
-        return self.get_dir() / 'prms.npy'
+        """Method for loading path to experiment parameters file"""
+        return self.get_dir() / 'prms.pth'
     
     def get_results_path(self):
-        """Method for loading path to experiment results"""
-        return self.get_dir() / 'results.npy'
+        """Method for loading dir to experiment results files"""
+        return self.get_dir() / 'results.pth'
 
     def _update_args(self, prms):
         """Method for updating arguments from saved parameter dictionary"""
@@ -175,29 +175,29 @@ class Experiment(ABC):
     def save_experiment(self, results):
         """Method for saving experiment parameters and results to file"""
         # Save experiment parameters
-        save(self.get_prms_path(), vars(self.args))
-        # Save experiment results
-        save(self.get_results_path(), results)
+        save(vars(self.args), self.get_prms_path())
+        # Save experiment results 
+        save(results, self.get_results_path())
 
     def load_experiment(self, no_results=False):
-        """
-        Method for loading saved experiment results.
-        """
-        # Check if it is there
+        """Method for loading saved experiment parameters and results"""
+        # Check if prms path is there
         if not self.get_prms_path().exists():
             raise ValueError(f"saved parameters at: f{self.get_prms_path()} not found!")
+        
+        # Check if results directory is there
         if not self.get_results_path().exists():
             raise ValueError(f"saved results at: f{self.get_results_path()} not found!")
 
         # Load parameters into object
-        prms = load(self.get_prms_path(), allow_pickle=True).item()
+        prms = load(self.get_prms_path())
         self._update_args(prms)
         
         # Don't load results if requested
         if no_results: return None
 
         # Load and return results
-        return load(self.get_results_path(), allow_pickle=True).item()
+        return load(self.get_results_path())
     
     @abstractmethod
     def main(self) -> Tuple[Dict, List[TorchModule]]:

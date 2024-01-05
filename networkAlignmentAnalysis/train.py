@@ -1,7 +1,7 @@
 import time
 from tqdm import tqdm
 import torch
-from networkAlignmentAnalysis.utils import transpose_list, value_by_layer
+from networkAlignmentAnalysis.utils import transpose_list, condense_values, value_by_layer
 
 
 def train(nets, optimizers, dataset, **parameters):
@@ -89,13 +89,13 @@ def train(nets, optimizers, dataset, **parameters):
     
     # add optional analyses
     if measure_alignment: 
-        results['alignment'] = transpose_list(alignment)
+        results['alignment'] = condense_values(transpose_list(alignment))
     if measure_delta_weights:
-        results['delta_weights'] = transpose_list(delta_weights)
+        results['delta_weights'] = condense_values(transpose_list(delta_weights))
     if measure_avgcorr:
-        results['avgcorr'] = transpose_list(avgcorr)
+        results['avgcorr'] = condense_values(transpose_list(avgcorr))
     if measure_fullcorr:
-        results['fullcorr'] = transpose_list(fullcorr)
+        results['fullcorr'] = condense_values(transpose_list(fullcorr))
 
     return results
 
@@ -141,7 +141,7 @@ def test(nets, dataset, **parameters):
     results = {
         'loss': [loss / num_batches for loss in total_loss],
         'accuracy': [correct / num_batches for correct in num_correct],
-        'alignment': transpose_list(alignment),
+        'alignment': condense_values(transpose_list(alignment)),
     }
 
     return results
@@ -157,12 +157,12 @@ def get_dropout_indices(idx_alignment, fraction):
 
     returns a fraction of indices to drop of highest, lowest, and random alignment
     """
-    num_nets = idx_alignment[0].size(1)
-    num_nodes = [idx.size(0) for idx in idx_alignment]
+    num_nets = idx_alignment[0].size(0)
+    num_nodes = [idx.size(1) for idx in idx_alignment]
     num_drop = [int(nodes * fraction) for nodes in num_nodes]
-    idx_high = [idx[-drop:] for idx, drop in zip(idx_alignment, num_drop)]
-    idx_low = [idx[:drop] for idx, drop in zip(idx_alignment, num_drop)]
-    idx_rand = [torch.stack([torch.randperm(nodes)[:drop] for _ in range(num_nets)], dim=1) 
+    idx_high = [idx[:, -drop:] for idx, drop in zip(idx_alignment, num_drop)]
+    idx_low = [idx[:, :drop] for idx, drop in zip(idx_alignment, num_drop)]
+    idx_rand = [torch.stack([torch.randperm(nodes)[:drop] for _ in range(num_nets)], dim=0) 
                 for nodes, drop in zip(num_nodes, num_drop)]
     return idx_high, idx_low, idx_rand
 
@@ -194,11 +194,9 @@ def progressive_dropout(nets, dataset, alignment=None, **parameters):
     # get alignment and index of alignment
     if alignment is None:
         alignment = test(nets, dataset, **parameters)['alignment']
-        
-    alignment = [torch.stack(align, dim=1) 
-                 for align in transpose_list([[torch.mean(value_by_layer(align, layer), dim=1) 
-                 for layer in range(num_dropout_layers)] for align in alignment])]
-    idx_alignment = [torch.argsort(align, dim=0) for align in alignment]
+    
+    alignment = [torch.mean(align, dim=1) for align in alignment[:num_dropout_layers]]
+    idx_alignment = [torch.argsort(align, dim=1) for align in alignment]
     
     # preallocate variables and define metaparameters
     num_nets = len(nets)
@@ -241,11 +239,11 @@ def progressive_dropout(nets, dataset, alignment=None, **parameters):
                     drop_layer = [layer for layer in range(num_dropout_layers)]
                 
                 # get output with targeted dropout
-                out_high = [net.forward_targeted_dropout(images, [drop[:, idx] for drop in drop_high], drop_layer)[0]
+                out_high = [net.forward_targeted_dropout(images, [drop[idx, :] for drop in drop_high], drop_layer)[0]
                             for idx, net in enumerate(nets)]
-                out_low = [net.forward_targeted_dropout(images, [drop[:, idx] for drop in drop_low], drop_layer)[0] 
+                out_low = [net.forward_targeted_dropout(images, [drop[idx, :] for drop in drop_low], drop_layer)[0] 
                            for idx, net in enumerate(nets)]
-                out_rand = [net.forward_targeted_dropout(images, [drop[:, idx] for drop in drop_rand], drop_layer)[0] 
+                out_rand = [net.forward_targeted_dropout(images, [drop[idx, :] for drop in drop_rand], drop_layer)[0] 
                             for idx, net in enumerate(nets)]
 
                 # get loss with targeted dropout

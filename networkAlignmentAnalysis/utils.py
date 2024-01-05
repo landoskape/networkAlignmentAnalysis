@@ -1,8 +1,10 @@
-import torch
+from typing import List
 import numpy as np
+import torch
 from matplotlib import pyplot as plt
 from torchvision import transforms
-    
+
+
 # -- deprecation block --
 from warnings import warn
 
@@ -10,10 +12,11 @@ def avg_align_by_layer(full):
     warn("avg_align_by_layer is deprecated, change to avg_value_by_layer!", DeprecationWarning, stacklevel=2)
     return avg_value_by_layer(full)
 
-def align_by_layer(full):
+def align_by_layer(full, layer):
     warn("align_by_layer is deprecated, change to value_by_layer!", DeprecationWarning, stacklevel=2)
-    return value_by_layer(full)
+    return value_by_layer(full, layer)
 # ------------------------
+
 
 def check_iterable(val):
     """duck-type check if val is iterable"""
@@ -188,7 +191,7 @@ def avg_value_by_layer(full):
         avg_full[layer,:] = torch.tensor([torch.mean(f[layer]) for f in full])
     return avg_full.cpu()
 
-def value_by_layer(full, layer):
+def value_by_layer(full: List[List[torch.Tensor]], layer: int) -> torch.Tensor:
     """
     return all value measurements for a particular layer from **full**
 
@@ -196,11 +199,26 @@ def value_by_layer(full, layer):
     minibatch etc and each inner list is the value for each node in the network across layers
 
     this method will return just the part of **full** corresponding to the layer indexed
-    by **layer** as a tensor of shape (num_nodes, num_epochs)
+    by **layer** as a tensor of shape (num_epochs, num_nodes)
 
     see ``avg_value_by_layer`` for a little more explanation
     """
-    return torch.cat([f[layer].view(-1, 1) for f in full], dim=1).cpu()
+    return torch.cat([f[layer].view(1, -1) for f in full], dim=0).cpu()
+
+def condense_values(full: List[List[List[torch.Tensor]]]) -> List[torch.Tensor]:
+    """
+    condense List[List[List[Tensor]]] representing some value measured across networks, batches, and layers, for each node in the layer
+
+    returns list of #=num_layers tensors, where each tensor has shape (num_networks, num_batches, num_nodes_per_layer)
+
+    full should be a list of list of lists
+    the first list should have length = number of networks
+    the second list should have length = number of batches
+    the third list should have length = number of layers in the network (this has to be the same for each network!)
+    the tensor should have shape = number of nodes in this layer (also must be the same for each network) (or can be anything as long as consistent across layers)
+    """
+    num_layers = len(full[0][0])
+    return [torch.stack([value_by_layer(value, layer) for value in full]) for layer in range(num_layers)]
 
 def transpose_list(list_of_lists):
     """helper function for transposing the order of a list of lists"""
