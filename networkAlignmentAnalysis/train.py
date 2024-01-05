@@ -111,7 +111,7 @@ def test(nets, dataset, **parameters):
     num_nets = len(nets)
 
     # retrieve requested dataloader from dataset
-    use_test = not parameters.get('train_set', False)
+    use_test = not parameters.get('train_set', False) # if train_set=True, use_test=False
     dataloader = dataset.test_loader if use_test else dataset.train_loader
 
     # Performance Measurements
@@ -119,6 +119,11 @@ def test(nets, dataset, **parameters):
     num_correct = [0 for _ in range(num_nets)]
     num_batches = 0
     alignment = []
+
+    # put networks in evaluation mode
+    in_training_mode = [net.training for net in nets]
+    for net in nets:
+        net.eval()
 
     for batch in tqdm(dataloader):
         images, labels = dataset.unwrap_batch(batch)
@@ -143,6 +148,11 @@ def test(nets, dataset, **parameters):
         'accuracy': [correct / num_batches for correct in num_correct],
         'alignment': condense_values(transpose_list(alignment)),
     }
+
+    # return networks to whatever mode they used to be in 
+    for train_mode, net in zip(in_training_mode, nets):
+        if train_mode:
+            net.train()
 
     return results
 
