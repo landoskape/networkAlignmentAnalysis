@@ -156,8 +156,12 @@ class Experiment(ABC):
         return self.get_dir() / 'prms.pth'
     
     def get_results_path(self):
-        """Method for loading dir to experiment results files"""
+        """Method for loading path to experiment results files"""
         return self.get_dir() / 'results.pth'
+    
+    def get_network_path(self, name):
+        """Method for loading path to saved network file"""
+        return self.get_dir() / f"{name}.pt"
 
     def _update_args(self, prms):
         """Method for updating arguments from saved parameter dictionary"""
@@ -198,6 +202,18 @@ class Experiment(ABC):
 
         # Load and return results
         return load(self.get_results_path())
+    
+    def save_networks(self, nets, id=None):
+        """
+        Method for saving any networks that were trained
+        
+        Names networks with index in list of **nets**
+        If **id** is provided, will use id in addition to the index
+        """
+        name = f"net_{id}_" if id is not None else "net_"
+        for idx, net in enumerate(nets):
+            cname = name + f"{idx}"
+            save(net, self.get_network_path(cname))
     
     @abstractmethod
     def main(self) -> Tuple[Dict, List[TorchModule]]:
