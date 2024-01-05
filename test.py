@@ -9,24 +9,24 @@ from networkAlignmentAnalysis import train
 
 from argparse import ArgumentParser
 
-def get_args():
+def get_args(args):
     parser = ArgumentParser(description='test alignment code')
     parser.add_argument('--network', type=str, default='MLP')
     parser.add_argument('--dataset', type=str, default='MNIST')
     parser.add_argument('--epochs', type=int, default=1)
     parser.add_argument('--replicates', type=int, default=2)
-    return parser.parse_known_args()[0]
+    return parser.parse_args(args=None)
 
 def check_args():
     parser = ArgumentParser(description='hi')
     parser.add_argument('--check', type=str, default=None)
-    return parser.parse_known_args()[0]
+    return parser.parse_known_args()
 
 if __name__ == '__main__':
-    cargs = check_args()
-    print(vars(cargs))
+    checked, args = check_args()
+    print(vars(checked))
 
-    args = get_args()
+    args = get_args(args)
     print(vars(args))
 
     # DEVICE = 'cuda' if torch.cuda.is_available() else 'cpu'
