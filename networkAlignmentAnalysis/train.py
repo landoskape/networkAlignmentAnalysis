@@ -1,7 +1,7 @@
 import time
 from tqdm import tqdm
 import torch
-from networkAlignmentAnalysis.utils import transpose_list, align_by_layer
+from networkAlignmentAnalysis.utils import transpose_list, value_by_layer
 
 
 def train(nets, optimizers, dataset, **parameters):
@@ -23,6 +23,8 @@ def train(nets, optimizers, dataset, **parameters):
     # --- optional analyses ---
     measure_alignment = parameters.get('alignment', True)
     measure_delta_weights = parameters.get('delta_weights', False)
+    measure_avgcorr = parameters.get('average_correlation', True)
+    measure_fullcorr = parameters.get('full_correlation', False)
 
     # measure alignment throughout training
     if measure_alignment: 
@@ -32,6 +34,14 @@ def train(nets, optimizers, dataset, **parameters):
     if measure_delta_weights: 
         delta_weights = []
         init_weights = [net.get_alignment_weights() for net in nets]
+
+    # measure average correlation for each layer
+    if measure_avgcorr: 
+        avgcorr = []
+
+    # measure full correlation for each layer
+    if measure_fullcorr: 
+        fullcorr = []
 
     # --- training loop ---
     for epoch in tqdm(range(parameters['num_epochs']), desc="training epoch"):
@@ -64,7 +74,14 @@ def train(nets, optimizers, dataset, **parameters):
                 # Measure change in weights if requested
                 delta_weights.append([net.compare_weights(init_weight)
                                       for net, init_weight in zip(nets, init_weights)])
+                
+            if measure_avgcorr:
+                avgcorr.append([net.measure_correlation(images, precomputed=True, alpha=1.0, reduced=True) for net in nets])
+            
+            if measure_fullcorr:
+                fullcorr.append([net.measure_correlation(images, precomputed=True, alpha=1.0, reduced=False) for net in nets])
     
+    # create results dictionary
     results = {
         'loss': track_loss,
         'accuracy': track_accuracy,
@@ -75,6 +92,10 @@ def train(nets, optimizers, dataset, **parameters):
         results['alignment'] = transpose_list(alignment)
     if measure_delta_weights:
         results['delta_weights'] = transpose_list(delta_weights)
+    if measure_avgcorr:
+        results['avgcorr'] = transpose_list(avgcorr)
+    if measure_fullcorr:
+        results['fullcorr'] = transpose_list(fullcorr)
 
     return results
 
@@ -113,7 +134,7 @@ def test(nets, dataset, **parameters):
         # Keep track of number of batches
         num_batches += 1
 
-        # Measure Integration
+        # Measure Alignment
         alignment.append([net.measure_alignment(images, precomputed=True, method='alignment')
                           for net in nets])
     
@@ -175,7 +196,7 @@ def progressive_dropout(nets, dataset, alignment=None, **parameters):
         alignment = test(nets, dataset, **parameters)['alignment']
         
     alignment = [torch.stack(align, dim=1) 
-                 for align in transpose_list([[torch.mean(align_by_layer(align, layer), dim=1) 
+                 for align in transpose_list([[torch.mean(value_by_layer(align, layer), dim=1) 
                  for layer in range(num_dropout_layers)] for align in alignment])]
     idx_alignment = [torch.argsort(align, dim=0) for align in alignment]
     

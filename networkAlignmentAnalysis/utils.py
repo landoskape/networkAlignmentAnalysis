@@ -3,6 +3,18 @@ import numpy as np
 from matplotlib import pyplot as plt
 from torchvision import transforms
     
+# -- deprecation block --
+from warnings import warn
+
+def avg_align_by_layer(full):
+    warn("avg_align_by_layer is deprecated, change to avg_value_by_layer!", DeprecationWarning, stacklevel=2)
+    return avg_value_by_layer(full)
+
+def align_by_layer(full):
+    warn("align_by_layer is deprecated, change to value_by_layer!", DeprecationWarning, stacklevel=2)
+    return value_by_layer(full)
+# ------------------------
+
 def check_iterable(val):
     """duck-type check if val is iterable"""
     try:
@@ -11,6 +23,17 @@ def check_iterable(val):
         return False
     else:
         return True
+
+def smartcorr(input):
+    """
+    Performs torch corrcoef on the input data but sets each pair-wise correlation coefficent
+    to 0 where the activity has no variance (var=0) for a particular dimension (replaces nans with zeros)sss
+    """
+    idx_zeros = torch.var(input, dim=1)==0
+    cc = torch.corrcoef(input)
+    cc[idx_zeros,:] = 0
+    cc[:,idx_zeros] = 0
+    return cc
 
 def alignment(input, weight, method='alignment'):
     """
@@ -42,10 +65,7 @@ def alignment(input, weight, method='alignment'):
     if method=='alignment':
         cc = torch.cov(input.T)
     elif method=='similarity':
-        idx_no_activity = torch.where(torch.std(input,axis=0)==0)[0]
-        cc = torch.corrcoef(input.T)
-        cc[idx_no_activity,:] = 0
-        cc[:,idx_no_activity] = 0
+        cc = smartcorr(input.T)
     else: 
         raise ValueError(f"did not recognize method ({method}), must be 'alignment' or 'similarity'")
     # Compute rayleigh quotient
@@ -114,12 +134,42 @@ def get_maximum_strides(h_input, w_input, layer):
     w_max = int(np.floor((w_input + 2*layer.padding[1] - layer.dilation[1]*(layer.kernel_size[1] - 1) -1)/layer.stride[1] + 1))
     return h_max, w_max
 
-def avg_align_by_layer(full):
+def correlation(output, alpha=1.0, method='corr'):
     """
-    return average alignment per layer across training
+    Expects a batch x neuron tensor of output activity of a layer
+
+    Returns: 
+    1. Pairwise variance or correlation coefficient between neurons across batch dimension
+    2. Weighted(by alpha) average squared magnitude of var/corr between neurons
+    """
+    if method=='var':
+        cc = torch.cov(output.T)
+    elif method=='corr':
+        cc = smartcorr(output.T)
+    else:
+        raise ValueError(f"Method ({method}) not recognized, must be 'var' or 'corr'")
+    lcc = alpha * torch.mean(torch.abs(cc)) # enforce positive in case of correlation measurement
+    return cc, lcc
+
+def correlation_linear(output, alpha=1.0, method='corr'):
+    """wrapper for correlation of linear layer"""
+    return correlation(output, alpha=alpha, method=method)
+
+def correlation_convolutional(output, alpha=1.0, each_stride=True, method='corr'):
+    """wrapper for correlation of convolutional layer (conv2d)"""
+    if each_stride:
+        raise ValueError("Not implemented yet")
+    else:
+        output_by_channel = output.transpose(0, 1).reshape(output.shape[1], -1) # channels x (batch*H*W)
+        return correlation(output_by_channel.T, alpha=alpha, method=method)
+
+def avg_value_by_layer(full):
+    """
+    return average value per layer across training
 
     **full** is a list of lists where the outer list is each snapshot through training or 
-    minibatch etc and each inner list is the alignment for each node in the network across layers
+    minibatch etc and each inner list is the value for each node in the network across layers
+    of a particular measurement
     
     For example:
     num_epochs = 1000
@@ -128,7 +178,7 @@ def avg_align_by_layer(full):
     len(full[i]) == 4 ... for all i
     [f.shape for f in full[i]] = [50, 40, 30, 20] ... for all i
 
-    this method will return a tensor of size (num_layers, num_epochs) of the average alignment (or
+    this method will return a tensor of size (num_layers, num_epochs) of the average value (for
     whatever value is in **full**) for each list/list
     """
     num_epochs = len(full)
@@ -138,17 +188,17 @@ def avg_align_by_layer(full):
         avg_full[layer,:] = torch.tensor([torch.mean(f[layer]) for f in full])
     return avg_full.cpu()
 
-def align_by_layer(full, layer):
+def value_by_layer(full, layer):
     """
-    return all alignment measurements for a particular layer from **full**
+    return all value measurements for a particular layer from **full**
 
     **full** is a list of lists where the outer list is each snapshot through training or
-    minibatch etc and each inner list is the alignment for each node in the network across layers
+    minibatch etc and each inner list is the value for each node in the network across layers
 
     this method will return just the part of **full** corresponding to the layer indexed
     by **layer** as a tensor of shape (num_nodes, num_epochs)
 
-    see ``avg_align_by_layer`` for a little more explanation
+    see ``avg_value_by_layer`` for a little more explanation
     """
     return torch.cat([f[layer].view(-1, 1) for f in full], dim=1).cpu()
 
