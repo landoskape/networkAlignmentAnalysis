@@ -26,7 +26,7 @@ if __name__ == '__main__':
 
             # Save networks
             if exp.args.save_networks:
-                print("!!!!! Need to write generalizable network saving system !!!!!")
+                exp.save_networks(nets)
         
     else:
         # Load saved experiment (parameters and results)
