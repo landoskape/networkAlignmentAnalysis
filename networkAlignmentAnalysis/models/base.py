@@ -3,9 +3,10 @@ from tqdm import tqdm
 from abc import ABC, abstractmethod 
 import torch
 from torch import nn
+from torchvision import transforms
+
 from .layers import LAYER_REGISTRY, REGISTRY_REQUIREMENTS, check_metaparameters
-from ..utils import check_iterable
-from ..utils import get_maximum_strides
+from ..utils import check_iterable, get_maximum_strides, batch_cov, named_transpose, weighted_average
 
 class AlignmentNetwork(nn.Module, ABC):
     """
@@ -247,23 +248,29 @@ class AlignmentNetwork(nn.Module, ABC):
         return x, activations
     
     @torch.no_grad()
-    def measure_eigenfeatures(self, dataloader, DEVICE=None, with_updates=True):
+    def measure_eigenfeatures(self, dataloader, DEVICE=None, with_updates=True, full_conv=False):
         """
         measure the eigenvalues and eigenvectors of the input to each layer
         and also measure how much each weight array uses each eigenvector
 
-        computing eigenfeatures is intensive for computer for big matrices
-        so it's not a good idea to this on unfolded data in convolutional
-        layers. It's probably a good idea to do that sometimes -- I think 
-        sklearn's IncrementalPCA algorithm is best for that. But it still
-        takes a while so shouldn't be done frequently, only after training
-        for important networks. 
+        computing eigenfeatures is intensive for big matrices so it's not a 
+        good idea to this on unfolded data in convolutional layers. It may be 
+        a good idea to do it sometimes -- I think sklearn's IncrementalPCA 
+        algorithm is best for this. But it still takes a while so shouldn't be
+        done frequently, only after training for important networks. 
+
+        **full_conv** is used to determine whether to unfold convolutional layers
+        -- if full_conv=True, will unfold and measure eigenfeatures that way
+        -- if full_conv=False, will measure for each stride (and take the average
+        across strides weighted by the variance of the input data)
 
         soon I'll get it working where I measure the eigenfeatures for each
         stride independently and do a weighted average based on the norm of
         the activity in each stride.
         """
-        if DEVICE is None: DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
+        # Set device automatically if not provided
+        if DEVICE is None: 
+            DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
         
         # Measure Activations (without dropout) for all images
         training_mode = self.training # save for resetting at the end
@@ -296,47 +303,116 @@ class AlignmentNetwork(nn.Module, ABC):
 
         # retrieve weights and flatten inputs if required
         weights = []
-        zipped = zip(inputs_to_layers, self.get_alignment_layers(), self.get_alignment_metaparameters())
-        for ii, (input, layer, metaprms) in enumerate(zipped):
-            weight = layer.weight.data
-            if metaprms['unfold']:
-                # unfold weights and add them to weights list
-                num_strides = prod(get_maximum_strides(input.shape[2], input.shape[3], layer))
-                unfolded_weights = weight.view(weight.size(0), -1).repeat(1, num_strides)
-                weights.append(unfolded_weights)
-
-                # unfold input activity and update inputs_to_layers
+        metaprms = self.get_alignment_metaparameters()
+        zipped = zip(inputs_to_layers, self.get_alignment_layers(), metaprms)
+        for ii, (input, layer, metaprm) in enumerate(zipped):
+            weight = layer.weight.data # get alignment layer weight data
+            if metaprm['unfold']:
+                # get unfolded input activity
                 layer_prms = dict(stride=layer.stride, padding=layer.padding, dilation=layer.dilation)
                 unfolded_input = torch.nn.functional.unfold(input, layer.kernel_size, **layer_prms)
-                unfolded_input = unfolded_input.transpose(1, 2).reshape(input.size(0), -1)
-                inputs_to_layers[ii] = unfolded_input
+                if full_conv:
+                    # flatten unfolded input
+                    unfolded_input = unfolded_input.transpose(1, 2).reshape(input.size(0), -1)
+                    inputs_to_layers[ii] = unfolded_input
+
+                    # unfold weights and add them to weights list
+                    num_strides = prod(get_maximum_strides(input.shape[2], input.shape[3], layer))
+                    unfolded_weights = weight.view(weight.size(0), -1).repeat(1, num_strides)
+                    weights.append(unfolded_weights)
+
+                else:
+                    # keep unfolded input activity in (dim x stride) format
+                    inputs_to_layers[ii] = unfolded_input
+
+                    # flatten weights (without repeating!)
+                    flat_weights = weight.view(weight.size(0), -1)
+                    weights.append(flat_weights)
 
             else:
                 # if not unfolding weights, just add them directly
                 weights.append(weight)
 
         # Measure eigenfeatures of input to each layer
+        beta = []
         eigenvalues = []
         eigenvectors = []
-        for input in inputs_to_layers:
-            # covariance matrix is positive semidefinite, but numerical errors can produce negative eigenvalues
-            ccov = torch.cov(input.T)
-            crank = torch.linalg.matrix_rank(ccov)
-            w, v = torch.linalg.eigh(ccov)
-            w_idx = torch.argsort(-w)
-            w = w[w_idx]
-            v = v[:,w_idx]
+        zipped = zip(inputs_to_layers, weights, metaprms)
+        for input, weight, metaprm in zipped:
+            if not full_conv and metaprm['unfold']:
+                # measure variance across samples (each batch element of the dataset)
+                # average variance across dimensions of weight across each stride
+                bvar = torch.mean(torch.var(input, dim=0), dim=0) 
 
-            # Automatically set eigenvalues to 0 when they are numerical errors!
-            w[crank:] = 0
-            eigenvalues.append(w)
-            eigenvectors.append(v)
+                # measuring across each stride independently (for conv layers)
+                bcov = batch_cov(input.permute((2, 1, 0)))
+                brank = [torch.linalg.matrix_rank(bc) for bc in bcov]
+                
+                # eigh will fail if condition number is too high (which can happend
+                # in these strided input activity). If that's the case, we set the 
+                # covariance to the identity so eigh will work, and set the variance
+                # to 0 in that stride, so the weighted_average will ignore that stride.
+                for ii, bc in enumerate(bcov):
+                    if torch.isinf(torch.linalg.cond(bc)):
+                        bvar[ii] = 0 # set variance to 0 to ignore this dimension
+                        bcov[ii] = torch.eye(bcov.size(1))
+                
+                # measure eigenvalues and eigenvectors
+                w, v = named_transpose([torch.linalg.eigh(bc) for bc in bcov])
+                w_idx = [torch.argsort(-ww) for ww in w]
+                w = [ww[wi] for ww, wi in zip(w, w_idx)]
+                v = [vv[:, wi] for vv, wi in zip(v, w_idx)]
+                for ii, br in enumerate(brank):
+                    w[ii][br:] = 0
+                
+                # stack eigenvectors and eigenvalues into tensor
+                w = torch.stack(w)
+                v = torch.stack(v)
 
-        # Measure absolute value of dot product of weights on eigenvectors for each layer
-        beta = []
-        for evec, weight in zip(eigenvectors, weights):
-            weight = weight / torch.norm(weight,dim=1,keepdim=True)
-            beta.append(torch.abs(weight.cpu() @ evec))
+                # Measure abs value of dot product of weights on eigenvectors for each layer
+                num_strides = v.size(0)
+                weight = weight / torch.norm(weight, dim=1, keepdim=True)
+                b = torch.bmm(weight.cpu().unsqueeze(0).expand(num_strides, -1, -1), v)
+
+                # Contract across strides by weighted average of average variance per stride
+                b_weighted_by_var = weighted_average(b, bvar, 0)
+                w_weighted_by_var = weighted_average(w, bvar, 0)
+                v_weighted_by_var = weighted_average(v, bvar, 0)
+
+                # Append to output
+                beta.append(b_weighted_by_var)
+                eigenvalues.append(w_weighted_by_var)
+                eigenvectors.append(v_weighted_by_var)
+
+            else:
+                # measuring with unfolded data (independent of layer type)
+                ccov = torch.cov(input.T) # get covariance of input
+                crank = torch.linalg.matrix_rank(ccov) # measure rank of covariance
+                w, v = torch.linalg.eigh(ccov) # measure eigenvalues and vectors
+                w_idx = torch.argsort(-w) # sort by eigenvalue highest to lowest
+                w = w[w_idx]
+                v = v[:,w_idx]
+
+                # Automatically set eigenvalues to 0 when they are numerical errors!
+                w[crank:] = 0
+
+                # Measure abs value of dot product of weights on eigenvectors for each layer
+                weight = weight / torch.norm(weight, dim=1, keepdim=True)
+                beta.append(torch.abs(weight.cpu() @ v))
+
+                # Append eigenvalues and eigenvectors to output
+                eigenvalues.append(w)
+                eigenvectors.append(v)
+
+
+        # remove eventually after making sure everything works:
+        # -- Replaced with code in above for loop --
+        # # Measure absolute value of dot product of weights on eigenvectors for each layer
+        # beta = []
+        # for evec, weight in zip(eigenvectors, weights):
+        #     weight = weight / torch.norm(weight,dim=1,keepdim=True)
+        #     beta.append(torch.abs(weight.cpu() @ evec))
+        # ------------------------------------------
             
         return beta, eigenvalues, eigenvectors
     

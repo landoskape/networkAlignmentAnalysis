@@ -6,6 +6,7 @@ from torchvision import transforms
 import multiprocessing
 
 from . import files
+from .models.base import AlignmentNetwork
 
 
 REQUIRED_PROPERTIES = ['dataset_path', 'dataset_constructor', 'loss_function']
@@ -189,5 +190,15 @@ def get_dataset(dataset_name, build=False, transform_parameters={}, loader_param
         raise ValueError(f"Dataset ({dataset_name}) is not in DATASET_REGISTRY")
     dataset = DATASET_REGISTRY[dataset_name]
     if build:
+        if isinstance(transform_parameters, AlignmentNetwork):
+            # Can use an AlignmentNetwork instance to automatically retrieve transform parameters
+            transform_parameters = transform_parameters.get_transform_parameters(dataset_name)
+        else:
+            if not isinstance(transform_parameters, dict):
+                raise TypeError("transform_parameters must be a dictionary or an AlignmentNetwork")
+        
+        # Build the dataset
         return dataset(transform_parameters=transform_parameters, loader_parameters=loader_parameters)
+    
+    # Otherwise return the constructor
     return dataset

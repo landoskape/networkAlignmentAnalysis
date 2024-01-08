@@ -11,12 +11,12 @@ from ..datasets import get_dataset
 from .. import train
 from ..utils import compute_stats_by_type, transpose_list, named_transpose
 
-class AlignmentComparison(Experiment):
+class AlignmentStatistics(Experiment):
     def get_basename(self):
-        return 'alignment_comparison'
+        return 'alignment_stats'
     
     def prepare_path(self):
-        return [self.args.comparison, self.args.network, self.args.dataset, self.args.optimizer]
+        return [self.args.network, self.args.dataset, self.args.optimizer]
     
     def make_args(self, parser):
         """
@@ -28,19 +28,7 @@ class AlignmentComparison(Experiment):
         parser.add_argument('--dataset', type=str, default='MNIST') # what dataset to use
         parser.add_argument('--optimizer', type=str, default='Adam') # what optimizer to train with
 
-        # main experiment parameters
-        # -- the "comparison" determines what should be compared by the script --
-        # -- depending on selection, something about the networks are varied throughout the experiment --
-        parser.add_argument('--comparison', type=str, default='lr') # what comparison to do (see load_networks for options)
-        parser.add_argument('--regularizers', type=str, nargs='*', default=['none', 'dropout', 'weight_decay'])
-        parser.add_argument('--lrs', type=float, nargs='*', default=[1e-2, 1e-3, 1e-4]) # which learning rates to use
-        parser.add_argument('--noises', type=float, nargs='*', default=[1e-1, 1, 2]) # the (relative) std of noise to use
-
-        # supporting parameters for some of the "comparisons"
-        parser.add_argument('--compare-dropout', type=float, default=0.5) # dropout when doing regularizer comparison
-        parser.add_argument('--compare-wd', type=float, default=1e-5) # weight-decay when doing regularizer comparison
-
-        # default parameters (if not controlled by the comparison)
+        # default parameters
         parser.add_argument('--default-lr', type=float, default=1e-3) # default learning rate
         parser.add_argument('--default-dropout', type=float, default=0) # default dropout rate
         parser.add_argument('--default-wd', type=float, default=0) # default weight decay
@@ -66,7 +54,7 @@ class AlignmentComparison(Experiment):
         do supplementary analyses
         """
         # load networks 
-        nets, optimizers, prms = self.load_networks()
+        nets, optimizers = self.load_networks()
 
         # load dataset
         dataset = get_dataset(self.args.dataset, build=True, transform_parameters=nets[0])
@@ -91,7 +79,6 @@ class AlignmentComparison(Experiment):
 
         # make full results dictionary
         results = dict(
-            prms=prms,
             train_results=train_results,
             test_results=test_results,
             dropout_results=dropout_results,
@@ -107,9 +94,9 @@ class AlignmentComparison(Experiment):
         """
         main plotting loop
         """
-        self.plot_train_results(results['train_results'], results['test_results'], results['prms'])
-        self.plot_dropout_results(results['dropout_results'], results['dropout_parameters'], results['prms'])
-        self.plot_eigenfeatures(results['eigen_results'], results['prms'])
+        self.plot_train_results(results['train_results'], results['test_results'])
+        self.plot_dropout_results(results['dropout_results'], results['dropout_parameters'])
+        self.plot_eigenfeatures(results['eigen_results'])
 
     # ----------------------------------------------
     # ------ methods for main experiment loop ------
@@ -123,8 +110,6 @@ class AlignmentComparison(Experiment):
         their optimizers and a params dictionary with the experiment parameters associated
         with each network
         """
-        model_constructor = get_model(self.args.network)
-
         # get optimizer
         if self.args.optimizer == 'Adam':
             optim = torch.optim.Adam
@@ -133,53 +118,12 @@ class AlignmentComparison(Experiment):
         else:
             raise ValueError(f"optimizer ({self.args.optimizer}) not recognized")
         
-        # compare learning rates
-        if self.args.comparison == 'lr':
-            lrs = [lr for lr in self.args.lrs for _ in range(self.args.replicates)]
-            nets = [model_constructor(dropout=self.args.default_dropout) for _ in lrs]
-            nets = [net.to(self.device) for net in nets]
-            optimizers = [optim(net.parameters(), lr=lr, weight_decay=self.args.default_wd)
-                        for net, lr in zip(nets, lrs)]
-            prms = {
-                'lrs': lrs, # the value of the independent variable for each network
-                'name': 'lr', # the name of the parameter being varied
-                'vals': self.args.lrs, # the list of unique values for the relevant parameter
-            }
-            return nets, optimizers, prms
+        # get network
+        nets = [get_model(self.args.network, build=True, dropout=self.args.default_dropout) for _ in range(self.args.replicates)]
+        nets = [net.to(self.device) for net in nets]
+        optimizers = [optim(net.parameters(), lr=self.args.default_lr, weight_decay=self.args.default_wd) for net in nets]
         
-        # compare training with input noise
-        elif self.args.comparison == 'noise':
-            noises = [nnorm for nnorm in self.args.noises for _ in range(self.args.replicates)]
-            nets = [model_constructor(dropout=self.args.default_dropout) for _ in noises]
-            nets = [net.to(self.device) for net in nets]
-            optimizers = [optim(net.parameters(), lr=self.args.default_lr) for net in nets]
-            prms = {
-                'noises': noises, # the std of noise (relative to input std) added to the dataset
-                'name': 'input_noise', # the name of the parameter being varied
-                'vals': self.args.noises, # the list of unique values for the relevant parameter
-            }
-            return nets, optimizers, prms
-        
-        # compare training with different regularizers
-        elif self.args.comparison == 'regularizer':
-            dropout_values = [self.args.compare_dropout * (reg == 'dropout') for reg in self.args.regularizers]
-            weight_decay_values = [self.args.compare_wd * (reg == 'weight_decay') for reg in self.args.regularizers]
-            dropouts = [do for do in dropout_values for _ in range(self.args.replicates)]
-            weight_decays = [wd for wd in weight_decay_values for _ in range(self.args.replicates)]
-            nets = [model_constructor(dropout=do) for do in dropouts]
-            nets = [net.to(self.device) for net in nets]
-            optimizers = [optim(net.parameters(), lr=self.args.default_lr, weight_decay=wd)
-                        for net, wd in zip(nets, weight_decays)]
-            prms = {
-                'dropouts': dropouts, # dropout values by network
-                'weight_decays': weight_decays, # weight decay values by network
-                'name': 'regularizer', # name of experiment
-                'vals': self.args.regularizers, # name of unique regularizers
-            }
-            return nets, optimizers, prms
-
-        else:
-            raise ValueError(f"Comparison={self.args.comparision} is not recognized")
+        return nets, optimizers
 
 
     def train_networks(self, nets, optimizers, dataset):
@@ -207,14 +151,14 @@ class AlignmentComparison(Experiment):
     # ----------------------------------------------
     # ------- methods for main plotting loop -------
     # ----------------------------------------------
-    def plot_train_results(self, train_results, test_results, prms):
+    def plot_train_results(self, train_results, test_results):
         """
         plotting method for training trajectories and testing data
         """
 
         num_train_epochs = train_results['loss'].size(0)
-        num_types = len(prms['vals'])
-        labels = [f"{prms['name']}={val}" for val in prms['vals']]
+        num_types = 1
+        labels = [f"fill me in!!!"]
 
         print("getting statistics on run data...")
         alignment = torch.stack([torch.mean(align, dim=2) for align in train_results['alignment']])
@@ -339,9 +283,9 @@ class AlignmentComparison(Experiment):
         self.plot_ready('train_correlation_by_layer')
 
 
-    def plot_dropout_results(self, dropout_results, dropout_parameters, prms):
-        num_types = len(prms['vals'])
-        labels = [f"{prms['name']}={val}" for val in prms['vals']]
+    def plot_dropout_results(self, dropout_results, dropout_parameters):
+        num_types = 1
+        labels = [f"fill me in!!!!!?!?!"]
         cmap = mpl.colormaps['Set1']
         alpha = 0.3
         msize = 10
@@ -435,12 +379,12 @@ class AlignmentComparison(Experiment):
         self.plot_ready('prog_dropout_'+extra_name+'_accuracy')
 
 
-    def plot_eigenfeatures(self, results, prms):
+    def plot_eigenfeatures(self, results):
         """method for plotting results related to eigen-analysis"""
         beta, eigvals = results['beta'], results['eigvals']
 
-        num_types = len(prms['vals'])
-        labels = [f"{prms['name']}={val}" for val in prms['vals']]
+        num_types = 1
+        labels = [f"fill me in :("]
         cmap = mpl.colormaps['tab10']
 
         print("measuring statistics of eigenfeature analyses...")
