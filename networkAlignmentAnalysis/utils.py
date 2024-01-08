@@ -38,6 +38,19 @@ def smartcorr(input):
     cc[:,idx_zeros] = 0
     return cc
 
+def batch_cov(input):
+    """
+    Performs batched covariance on input data of shape (batch, dim, samples)
+
+    Where the resulting batch covariance matrix has shape (batch, dim, dim)
+    and bcov[i] = torch.cov(input[i])
+    """
+    D = input.size(1)
+    centered_input = input - input.mean(dim=2, keepdim=True)
+    bcov = torch.bmm(centered_input, centered_input.transpose(1, 2))
+    bcov /= (D-1)
+    return bcov
+    
 def alignment(input, weight, method='alignment'):
     """
     measure alignment (proportion variance explained) between **input** and **weight**
@@ -272,7 +285,22 @@ def compute_stats_by_type(tensor, num_types, dim, method='var'):
 
     return type_means, type_dev
 
+def weighted_average(data, weights, dim, keepdim=False):
+    """
+    take the weighted average of **data** on a certain dimension with **weights**
 
+    weights should be a nonnegative vector with the same size as data.size(dim)
+    uses the standard formula:
+    avg = data_i * weight_i
+    """
+    assert weights.ndim==1, "weights must be a 1-d tensor"
+    data_ndim = data.ndim
+    weight_dim = weights.size(0)
+    new_view = [weight_dim if ii==dim else 1 for ii in range(data_ndim)]
+    weights = weights.view(new_view)
+    numerator = torch.sum(data * weights, dim=dim, keepdim=keepdim)
+    denominator = torch.sum(weights, dim=dim, keepdim=keepdim)
+    return numerator / denominator
 
 def plot_rf(rf, width, alignment=None, alignBounds=None, showRFs=None, figSize=5):
     if showRFs is not None: 
