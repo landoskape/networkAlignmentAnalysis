@@ -1,8 +1,10 @@
 from argparse import ArgumentParser
 from .alignment_comparison import AlignmentComparison
+from .alignment_stats import AlignmentStatistics
 
 EXPERIMENT_REGISTRY = {
     'alignment_comparison': AlignmentComparison,
+    'alignment_stats': AlignmentStatistics,
 }
 
 def get_experiment(experiment_name, build=False, **kwargs):
