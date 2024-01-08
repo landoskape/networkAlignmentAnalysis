@@ -69,7 +69,7 @@ class AlignmentComparison(Experiment):
         nets, optimizers, prms = self.load_networks()
 
         # load dataset
-        dataset = get_dataset(self.args.dataset, transform_parameters=nets[0])
+        dataset = get_dataset(self.args.dataset, build=True, transform_parameters=nets[0])
 
         # train networks
         train_results, test_results = self.train_networks(nets, optimizers, dataset)
@@ -150,7 +150,7 @@ class AlignmentComparison(Experiment):
         # compare training with input noise
         elif self.args.comparison == 'noise':
             noises = [nnorm for nnorm in self.args.noises for _ in range(self.args.replicates)]
-            nets = [model_constructor(dropout=self.rgs.default_dropout) for _ in noises]
+            nets = [model_constructor(dropout=self.args.default_dropout) for _ in noises]
             nets = [net.to(self.device) for net in nets]
             optimizers = [optim(net.parameters(), lr=self.args.default_lr) for net in nets]
             prms = {
@@ -189,7 +189,9 @@ class AlignmentComparison(Experiment):
             train_set=True,
             num_epochs=self.args.epochs,
             alignment=True,
-            delta_weights=True,
+            delta_weights=False,
+            average_correlation=True, 
+            full_correlation=False,
         )
 
         print('training networks...')
