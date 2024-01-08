@@ -69,8 +69,7 @@ class AlignmentComparison(Experiment):
         nets, optimizers, prms = self.load_networks()
 
         # load dataset
-        transform_parameters = nets[0].get_transform_parameters(self.args.dataset)
-        dataset = self.load_dataset(transform_parameters=transform_parameters)
+        dataset = self.load_dataset(transform_parameters=nets[0])
 
         # train networks
         train_results, test_results = self.train_networks(nets, optimizers, dataset)
