@@ -9,7 +9,7 @@ from .experiment import Experiment
 from ..models.registry import get_model
 from ..datasets import get_dataset
 from .. import train
-from ..utils import avg_value_by_layer, compute_stats_by_type, transpose_list, named_transpose
+from ..utils import compute_stats_by_type, transpose_list, named_transpose
 
 class AlignmentComparison(Experiment):
     def get_basename(self):
@@ -69,7 +69,7 @@ class AlignmentComparison(Experiment):
         nets, optimizers, prms = self.load_networks()
 
         # load dataset
-        dataset = self.load_dataset(transform_parameters=nets[0])
+        dataset = get_dataset(self.args.dataset, transform_parameters=nets[0])
 
         # train networks
         train_results, test_results = self.train_networks(nets, optimizers, dataset)
@@ -180,12 +180,6 @@ class AlignmentComparison(Experiment):
 
         else:
             raise ValueError(f"Comparison={self.args.comparision} is not recognized")
-    
-
-    def load_dataset(self, transform_parameters):
-        """supporting method for loading the requested dataset"""
-        dataset_constructor = get_dataset(self.args.dataset)
-        return dataset_constructor(transform_parameters=transform_parameters)
 
 
     def train_networks(self, nets, optimizers, dataset):
