@@ -189,7 +189,7 @@ class AlignmentComparison(Experiment):
             train_set=True,
             num_epochs=self.args.epochs,
             alignment=True,
-            delta_weights=False,
+            delta_weights=True,
             average_correlation=True, 
             full_correlation=False,
         )
