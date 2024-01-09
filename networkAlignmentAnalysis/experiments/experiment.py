@@ -18,8 +18,8 @@ class Experiment(ABC):
         self.basepath = files.results_path() / self.basename # Register basepath of experiment
         self.get_args(args=args) # Parse arguments to python program
         self.register_timestamp() # Register timestamp of experiment
-        self.device = 'cuda' if cuda_available() else 'cpu'
-        
+        self.device = self.args.device
+
     def report(self, init=False, args=False, meta_args=False) -> None:
         """Method for programmatically reporting details about experiment"""
         # Report general details about experiment 
@@ -127,9 +127,10 @@ class Experiment(ABC):
         parser.add_argument('--save-networks', default=False, action='store_true')
         parser.add_argument('--showprms', default=False, action='store_true')
         parser.add_argument('--showall', default=False, action='store_true', help='if true, will show all plots at once rather than having the user close each one for the next')
+        parser.add_argument('--device', type=str, default=None, help='which device to use (automatic if not provided)')
 
         # add meta arguments 
-        self.meta_args += ['nosave', 'justplot', 'save_networks', 'showprms', 'showall']
+        self.meta_args += ['nosave', 'justplot', 'save_networks', 'showprms', 'showall', 'device']
         
         # common parameters that shouldn't be updated when loading old experiment
         parser.add_argument('--use-timestamp', default=False, action='store_true')
@@ -137,6 +138,10 @@ class Experiment(ABC):
         
         # parse arguments (passing directly because initial parser will remove the "--experiment" argument)
         self.args = parser.parse_args(args=args)
+
+        # manage device
+        if self.args.device is None:
+            self.args.device = 'cuda' if cuda_available else 'cpu'
 
         # do checks
         if self.args.use_timestamp and self.args.justplot:
