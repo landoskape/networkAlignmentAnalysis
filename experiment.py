@@ -17,7 +17,7 @@ if __name__ == '__main__':
         # Report experiment details
         exp.report(init=True, args=True, meta_args=True)
 
-        # Run main experiment loop
+        # Run main experiment method
         results, nets = exp.main()
 
         # Save results if requested
