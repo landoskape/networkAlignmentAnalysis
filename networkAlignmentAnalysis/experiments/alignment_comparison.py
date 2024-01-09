@@ -69,7 +69,10 @@ class AlignmentComparison(Experiment):
         nets, optimizers, prms = self.load_networks()
 
         # load dataset
-        dataset = get_dataset(self.args.dataset, build=True, transform_parameters=nets[0])
+        dataset = get_dataset(self.args.dataset,
+                              build=True, 
+                              transform_parameters=nets[0],
+                              device=nets[0].device)
 
         # train networks
         train_results, test_results = self.train_networks(nets, optimizers, dataset)
@@ -133,10 +136,16 @@ class AlignmentComparison(Experiment):
         else:
             raise ValueError(f"optimizer ({self.args.optimizer}) not recognized")
         
+        # build necessary kwargs
+        if self.args.network == 'AlexNet' and self.args.dataset == 'MNIST':
+            model_kwargs = {'num_classes': 10}
+        else:
+            model_kwargs = {}
+
         # compare learning rates
         if self.args.comparison == 'lr':
             lrs = [lr for lr in self.args.lrs for _ in range(self.args.replicates)]
-            nets = [model_constructor(dropout=self.args.default_dropout) for _ in lrs]
+            nets = [model_constructor(dropout=self.args.default_dropout, **model_kwargs) for _ in lrs]
             nets = [net.to(self.device) for net in nets]
             optimizers = [optim(net.parameters(), lr=lr, weight_decay=self.args.default_wd)
                         for net, lr in zip(nets, lrs)]
@@ -150,7 +159,7 @@ class AlignmentComparison(Experiment):
         # compare training with input noise
         elif self.args.comparison == 'noise':
             noises = [nnorm for nnorm in self.args.noises for _ in range(self.args.replicates)]
-            nets = [model_constructor(dropout=self.args.default_dropout) for _ in noises]
+            nets = [model_constructor(dropout=self.args.default_dropout, **model_kwargs) for _ in noises]
             nets = [net.to(self.device) for net in nets]
             optimizers = [optim(net.parameters(), lr=self.args.default_lr) for net in nets]
             prms = {
@@ -166,7 +175,7 @@ class AlignmentComparison(Experiment):
             weight_decay_values = [self.args.compare_wd * (reg == 'weight_decay') for reg in self.args.regularizers]
             dropouts = [do for do in dropout_values for _ in range(self.args.replicates)]
             weight_decays = [wd for wd in weight_decay_values for _ in range(self.args.replicates)]
-            nets = [model_constructor(dropout=do) for do in dropouts]
+            nets = [model_constructor(dropout=do, **model_kwargs) for do in dropouts]
             nets = [net.to(self.device) for net in nets]
             optimizers = [optim(net.parameters(), lr=self.args.default_lr, weight_decay=wd)
                         for net, wd in zip(nets, weight_decays)]
@@ -297,6 +306,9 @@ class AlignmentComparison(Experiment):
         ax[3].set_ylim(0, 100)
 
         self.plot_ready('train_test_performance')
+
+
+
 
         # Make Alignment Figure
         num_layers = align_mean.size(0)

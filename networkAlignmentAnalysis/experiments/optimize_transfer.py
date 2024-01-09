@@ -58,6 +58,7 @@ class OptimizeTransfer(Experiment):
         # train_results, test_results = self.train_networks(nets, optimizers, dataset)
 
         # --- test networks at current stage of training on permuted MNIST ---
+        # --- (permuting pixels just an idea for transfer learning!!!) ---
         def permute_pixels(batch, permute_idx=None):
             batch[0] = batch[0][:, permute_idx] # permute randomly on pixel dimension
             return batch
@@ -94,7 +95,8 @@ class OptimizeTransfer(Experiment):
     def load_dataset(self, transform_parameters):
         """supporting method for loading the requested dataset"""
         dataset_constructor = get_dataset(self.args.dataset)
-        return dataset_constructor(transform_parameters=transform_parameters)
+        return dataset_constructor(transform_parameters=transform_parameters,
+                                   device=self.args.device)
 
     # ----------------------------------------------
     # ------- methods for main plotting loop -------
