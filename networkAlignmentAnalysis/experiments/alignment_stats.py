@@ -57,7 +57,10 @@ class AlignmentStatistics(Experiment):
         nets, optimizers = self.load_networks()
 
         # load dataset
-        dataset = get_dataset(self.args.dataset, build=True, transform_parameters=nets[0])
+        dataset = get_dataset(self.args.dataset,
+                              build=True,
+                              transform_parameters=nets[0],
+                              device=nets[0].device)
 
         # train networks
         train_results, test_results = self.train_networks(nets, optimizers, dataset)
@@ -119,9 +122,15 @@ class AlignmentStatistics(Experiment):
             raise ValueError(f"optimizer ({self.args.optimizer}) not recognized")
         
         # get network
-        nets = [get_model(self.args.network, build=True, dropout=self.args.default_dropout) for _ in range(self.args.replicates)]
+        model_kwargs = {}
+        if self.args.model == 'AlexNet' and self.args.dataset == 'MNIST':
+            model_kwargs['num_classes'] = 10
+
+        nets = [get_model(self.args.network, build=True, dropout=self.args.default_dropout, **model_kwargs)
+                for _ in range(self.args.replicates)]
         nets = [net.to(self.device) for net in nets]
-        optimizers = [optim(net.parameters(), lr=self.args.default_lr, weight_decay=self.args.default_wd) for net in nets]
+        optimizers = [optim(net.parameters(), lr=self.args.default_lr, weight_decay=self.args.default_wd)
+                      for net in nets]
         
         return nets, optimizers
 

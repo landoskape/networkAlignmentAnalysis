@@ -4,6 +4,7 @@ import socket
 PATH_REGISTRY = {
     'DESKTOP-M2J64J2': Path('C:/Users/andrew/Documents/machineLearning'),
 }
+
 def get_hostname():
     return socket.gethostname()
 
