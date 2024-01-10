@@ -1,16 +1,23 @@
-from pathlib import Path
+import getpass
 import socket
+from pathlib import Path
 
 PATH_REGISTRY = {
     'DESKTOP-M2J64J2': Path('C:/Users/andrew/Documents/machineLearning'),
+    'Celias-MBP.lan': Path('/Users/celiaberon/Documents/machine_learning'),
+    'cberon': Path('/n/home00/cberon/datasets/')
 }
 
 def get_hostname():
     return socket.gethostname()
 
+def get_username():
+    return getpass.getuser()
+
 def local_path():
     """method for defining the local root path for datasets and results"""
     hostname = get_hostname()
+    hostname = hostname if hostname in PATH_REGISTRY else get_username()
     if hostname not in PATH_REGISTRY:
         raise ValueError(f"hostname ({hostname}) is not registered in the path registry")
     # return path
