@@ -1,15 +1,15 @@
-import numpy as np
-from tqdm import tqdm
-import torch
-
-from matplotlib import pyplot as plt
 import matplotlib as mpl
+import numpy as np
+import torch
+from matplotlib import pyplot as plt
+from tqdm import tqdm
 
-from .experiment import Experiment
-from ..models.registry import get_model
-from ..datasets import get_dataset
 from .. import train
-from ..utils import compute_stats_by_type, transpose_list, named_transpose
+from ..datasets import get_dataset
+from ..models.registry import get_model
+from ..utils import compute_stats_by_type, named_transpose, transpose_list
+from .experiment import Experiment
+
 
 class AlignmentStatistics(Experiment):
     def get_basename(self):
@@ -60,7 +60,7 @@ class AlignmentStatistics(Experiment):
         dataset = get_dataset(self.args.dataset,
                               build=True,
                               transform_parameters=nets[0],
-                              device=nets[0].device)
+                              device=self.args.device)
 
         # train networks
         train_results, test_results = self.train_networks(nets, optimizers, dataset)
@@ -123,11 +123,12 @@ class AlignmentStatistics(Experiment):
         
         # get network
         model_kwargs = {}
-        if self.args.model == 'AlexNet' and self.args.dataset == 'MNIST':
+        if self.args.network == 'AlexNet' and self.args.dataset == 'MNIST':
             model_kwargs['num_classes'] = 10
 
         nets = [get_model(self.args.network, build=True, dropout=self.args.default_dropout, **model_kwargs)
                 for _ in range(self.args.replicates)]
+
         nets = [net.to(self.device) for net in nets]
         optimizers = [optim(net.parameters(), lr=self.args.default_lr, weight_decay=self.args.default_wd)
                       for net in nets]
