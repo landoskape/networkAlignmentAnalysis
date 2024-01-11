@@ -1,6 +1,7 @@
 import multiprocessing
 from abc import ABC, abstractmethod
 
+import numpy as np
 import torch
 import torchvision
 from torch import nn
@@ -12,11 +13,16 @@ from .models.base import AlignmentNetwork
 REQUIRED_PROPERTIES = ['dataset_path', 'dataset_constructor', 'loss_function']
 
 def default_loader_parameters(batch_size=1024):
+
+    num_workers = multiprocessing.cpu_count() - 2  # use the computer without stealing all resources
+    num_workers = np.clip(num_workers, 1, 4)
     default_parameters = dict(
         batch_size=batch_size,
-        num_workers=multiprocessing.cpu_count()-2, # use the computer without stealing all resources
+        num_workers=num_workers,
         shuffle=True,
     )
+    print(f'{num_workers = }')
+
     return default_parameters
 
 class DataSet(ABC):
