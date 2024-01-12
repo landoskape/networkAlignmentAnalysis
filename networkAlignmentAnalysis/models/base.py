@@ -3,7 +3,6 @@ from tqdm import tqdm
 from abc import ABC, abstractmethod 
 import torch
 from torch import nn
-from torchvision import transforms
 
 from .layers import LAYER_REGISTRY, REGISTRY_REQUIREMENTS, check_metaparameters
 from ..utils import check_iterable, get_maximum_strides, batch_cov, named_transpose, weighted_average
@@ -120,7 +119,7 @@ class AlignmentNetwork(nn.Module, ABC):
                 p.append(module.p)
         return p
     
-    def set_dropout(self, p=0.5):
+    def set_dropout(self, p):
         """
         Set dropout of all layers in a network
         Note that this will overwrite whatever was previously used
@@ -128,6 +127,31 @@ class AlignmentNetwork(nn.Module, ABC):
         for module in self.modules():
             if isinstance(module, nn.Dropout):
                 module.p = p
+
+        if hasattr(self, 'dropout'):
+            setattr(self, 'dropout', p)
+    
+    def set_dropout_by_layer(self, p):
+        """
+        Set dropout of each layer in a network independently
+
+        p must be an iterable indicating the probability of dropout for each layer
+        """
+        # get dropout layers (in order!)
+        dropout_layers = []
+        for module in self.modules():
+            if isinstance(module, nn.Dropout):
+                dropout_layers.append(module)
+        
+        assert len(dropout_layers) == len(p), "p must contain the same number of elements as the number of dropout layers in the network"
+
+        # assign each p to the dropout layer
+        for layer, drop_prob in zip(dropout_layers, p):
+            layer.p = drop_prob
+
+        # set dropout attribute if it exists
+        if hasattr(self, 'dropout'):
+            setattr(self, 'dropout', p)
         
     @torch.no_grad()
     def get_activations(self, x=None, precomputed=False):
