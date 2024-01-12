@@ -75,6 +75,8 @@ def train(nets, optimizers, dataset, **parameters):
                 delta_weights.append([net.compare_weights(init_weight)
                                       for net, init_weight in zip(nets, init_weights)])
                 
+            # note: the double use of measure_correlation is inefficient and could probably 
+            # be precomputed once then operated on and appended differently for each term
             if measure_avgcorr:
                 avgcorr.append([net.measure_correlation(images, precomputed=True, alpha=1.0, reduced=True) for net in nets])
             
