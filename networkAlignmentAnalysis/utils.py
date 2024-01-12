@@ -50,7 +50,7 @@ def batch_cov(input):
     bcov = torch.bmm(centered_input, centered_input.transpose(1, 2))
     bcov /= (D-1)
     return bcov
-    
+
 def alignment(input, weight, method='alignment'):
     """
     measure alignment (proportion variance explained) between **input** and **weight**
