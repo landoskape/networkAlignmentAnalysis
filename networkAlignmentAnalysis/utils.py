@@ -18,6 +18,10 @@ def align_by_layer(full, layer):
 # ------------------------
 
 
+def get_device(tensor):
+    """simple method to get device of input tensor"""
+    return 'cuda' if tensor.is_cuda else 'cpu'
+
 def check_iterable(val):
     """duck-type check if val is iterable"""
     try:
@@ -150,34 +154,58 @@ def get_maximum_strides(h_input, w_input, layer):
     w_max = int(np.floor((w_input + 2*layer.padding[1] - layer.dilation[1]*(layer.kernel_size[1] - 1) -1)/layer.stride[1] + 1))
     return h_max, w_max
 
-def correlation(output, alpha=1.0, method='corr'):
+def correlation(output, method='corr'):
     """
     Expects a batch x neuron tensor of output activity of a layer
 
     Returns: 
-    1. Pairwise variance or correlation coefficient between neurons across batch dimension
-    2. Weighted(by alpha) average squared magnitude of var/corr between neurons
+    Pairwise variance or correlation coefficient between neurons across batch dimension
     """
     if method=='var':
-        cc = torch.cov(output.T)
+        return torch.cov(output.T)
     elif method=='corr':
-        cc = smartcorr(output.T)
+        return smartcorr(output.T)
     else:
         raise ValueError(f"Method ({method}) not recognized, must be 'var' or 'corr'")
-    lcc = alpha * torch.mean(torch.abs(cc)) # enforce positive in case of correlation measurement
-    return cc, lcc
 
-def correlation_linear(output, alpha=1.0, method='corr'):
+def correlation_linear(output, method='corr'):
     """wrapper for correlation of linear layer"""
-    return correlation(output, alpha=alpha, method=method)
+    return correlation(output, method=method)
 
-def correlation_convolutional(output, alpha=1.0, each_stride=True, method='corr'):
-    """wrapper for correlation of convolutional layer (conv2d)"""
+def correlation_convolutional(output, method='corr', each_stride=False):
+    """
+    wrapper for correlation of convolutional layer (conv2d)
+    
+    there are two natural methods - one is to measure the correlation using each 
+    convolutional stride, the second is to measure the correlation of the full 
+    unfolded layer. each_stride determines which one to use. 
+    
+    when each_stride=True, a weighted average of the correlation at each stride is
+    taken where the weights are the variance in the output (across channels and batch)
+    at that stride. This way, the output is a (num_output_channels, num_output_channels)
+    shaped tensor regardless of the setting used for each_stride.
+
+    NOTE: 
+    This choice for each_stride=True was made because it works and is a simple way
+    of averaging across strides. There might be a smarter way to average where the per
+    channel variance is used rather than the across channel variance. We should think
+    about that and make a better decision, or potentially created an option for doing
+    it either way depending on the scientific goal.
+    """
     if each_stride:
-        raise ValueError("Not implemented yet")
+        num_channels, h_max, w_max = output.size(1), output.size(2), output.size(3)
+        corr = torch.zeros((num_channels, num_channels), dtype=output.dtype).to(get_device(output))
+        vars = []
+        for h in range(h_max):
+            for w in range(w_max):
+                cvar = torch.var(output[:, :, h, w].flatten())
+                vars.append(cvar)
+                corr += correlation(output[:, :, h, w], method=method) * cvar
+        corr /= torch.sum(torch.tensor(vars))
+        return corr
     else:
         output_by_channel = output.transpose(0, 1).reshape(output.shape[1], -1) # channels x (batch*H*W)
-        return correlation(output_by_channel.T, alpha=alpha, method=method)
+        return correlation(output_by_channel.T, method=method)
 
 def avg_value_by_layer(full):
     """
