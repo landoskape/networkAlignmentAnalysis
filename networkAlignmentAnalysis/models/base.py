@@ -271,15 +271,14 @@ class AlignmentNetwork(nn.Module, ABC):
         return alignment
     
     @torch.no_grad()
-    def measure_correlation(self, x, precomputed=False, alpha=1.0, reduced=True):
+    def measure_correlation(self, x, precomputed=False, method='corr', reduced=True):
         correlation = []
         zipped = zip(self.get_layer_outputs(x=x, precomputed=precomputed), self.get_alignment_metaparameters())
         for activation, metaprms in zipped:
-            ccorr = metaprms['correlation_method'](activation, alpha=alpha)
-            if reduced: 
-                correlation.append(ccorr[1])
-            else:
-                correlation.append(ccorr[0])
+            ccorr = metaprms['correlation_method'](activation, method=method)
+            if reduced:
+                ccorr = torch.mean(torch.abs(ccorr))
+            correlation.append(ccorr)
         return correlation
 
     @torch.no_grad()
