@@ -16,6 +16,7 @@ def default_loader_parameters(batch_size=1024):
         batch_size=batch_size,
         num_workers=multiprocessing.cpu_count()-2, # use the computer without stealing all resources
         shuffle=True,
+        pin_memory=True,
     )
     return default_parameters
 
