@@ -16,6 +16,7 @@ def default_loader_parameters(batch_size=1024):
         batch_size=batch_size,
         num_workers=multiprocessing.cpu_count()-2, # use the computer without stealing all resources
         shuffle=True,
+        pin_memory=True,
     )
     return default_parameters
 
@@ -179,7 +180,7 @@ DATASET_REGISTRY = {
     'MNIST': MNIST,
 }
 
-def get_dataset(dataset_name, build=False, transform_parameters={}, loader_parameters={}):
+def get_dataset(dataset_name, build=False, transform_parameters={}, loader_parameters={}, **kwargs):
     """
     lookup dataset constructor from dataset registry by name
 
@@ -198,7 +199,7 @@ def get_dataset(dataset_name, build=False, transform_parameters={}, loader_param
                 raise TypeError("transform_parameters must be a dictionary or an AlignmentNetwork")
         
         # Build the dataset
-        return dataset(transform_parameters=transform_parameters, loader_parameters=loader_parameters)
+        return dataset(transform_parameters=transform_parameters, loader_parameters=loader_parameters, **kwargs)
     
     # Otherwise return the constructor
     return dataset

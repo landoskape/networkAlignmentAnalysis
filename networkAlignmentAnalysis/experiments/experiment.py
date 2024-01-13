@@ -122,10 +122,10 @@ class Experiment(ABC):
         parser = self.make_args(parser)
         
         # saving and new experiment loading parameters
-        parser.add_argument('--nosave', default=False, action='store_true')
-        parser.add_argument('--justplot', default=False, action='store_true')
-        parser.add_argument('--save-networks', default=False, action='store_true')
-        parser.add_argument('--showprms', default=False, action='store_true')
+        parser.add_argument('--nosave', default=False, action='store_true', help="prevents saving of results or plots")
+        parser.add_argument('--justplot', default=False, action='store_true', help="plot saved data without retraining and analyzing networks")
+        parser.add_argument('--save-networks', default=False, action='store_true', help="if --nosave wasn't provided, will also save networks that are trained")
+        parser.add_argument('--showprms', default=False, action='store_true', help='show parameters of previously saved experiment without doing anything else')
         parser.add_argument('--showall', default=False, action='store_true', help='if true, will show all plots at once rather than having the user close each one for the next')
         parser.add_argument('--device', type=str, default=None, help='which device to use (automatic if not provided)')
 
@@ -133,7 +133,7 @@ class Experiment(ABC):
         self.meta_args += ['nosave', 'justplot', 'save_networks', 'showprms', 'showall', 'device']
         
         # common parameters that shouldn't be updated when loading old experiment
-        parser.add_argument('--use-timestamp', default=False, action='store_true')
+        parser.add_argument('--use-timestamp', default=False, action='store_true', help='if used, will save data in a folder named after the current time (or whatever is provided in --timestamp)')
         parser.add_argument('--timestamp', default=None, help='the timestamp of a previous experiment to plot or observe parameters')
         
         # parse arguments (passing directly because initial parser will remove the "--experiment" argument)

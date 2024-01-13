@@ -46,7 +46,7 @@ class CNN2P2(AlignmentNetwork):
     """
     CNN with 2 convolutional layers, a max pooling stage, and 2 feedforward layers with dropout
     """
-    def initialize(self, dropout=0.5, each_stride=True):
+    def initialize(self, dropout=0.5, each_stride=True, flag=True):
         """architecture definition"""
         layer1 = nn.Sequential(nn.Conv2d(1, 32, kernel_size=3, stride=2, padding=1), nn.ReLU())
         layer2 = nn.Sequential(nn.Conv2d(32, 64, kernel_size=3, stride=2, padding=1), 
@@ -54,10 +54,14 @@ class CNN2P2(AlignmentNetwork):
         layer3 = nn.Sequential(nn.Dropout(p=dropout), nn.Linear(256, 256), nn.ReLU())
         layer4 = nn.Sequential(nn.Dropout(p=dropout), nn.Linear(256, 10))
 
-        self.register_layer(layer1, **default_metaprms_conv2d(0, each_stride=each_stride))
-        self.register_layer(layer2, **default_metaprms_conv2d(0, each_stride=each_stride))
+        self.register_layer(layer1, **default_metaprms_conv2d(0, each_stride=each_stride, flag=False))
+        self.register_layer(layer2, **default_metaprms_conv2d(0, each_stride=each_stride, flag=flag))
         self.register_layer(layer3, **default_metaprms_linear(1))
         self.register_layer(layer4, **default_metaprms_linear(1))
+
+        # add these parameters as attributes for easy lookup later
+        self.dropout = dropout
+        self.each_stride = each_stride
 
     def get_transform_parameters(self, dataset):
         """CNN2P2 specific transformations for each dataset"""
@@ -141,6 +145,10 @@ class AlexNet(AlignmentNetwork):
         self.register_layer(layer6, **default_metaprms_linear(1))
         self.register_layer(layer7, **default_metaprms_linear(1))
         self.register_layer(layer8, **default_metaprms_linear(0))
+
+        # add these parameters as attributes for easy lookup later
+        self.dropout = dropout
+        self.each_stride = each_stride
 
         # set dropout with general method so we can easily use each alexnet.features/classifier/etc
         self.set_dropout(dropout)
