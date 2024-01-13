@@ -41,6 +41,7 @@ class AlignmentNetwork(nn.Module, ABC):
         self.layers = nn.ModuleList() # a list of all modules in the forward pass
         self.metaparameters = [] # list of dictionaries containing metaparameters for each layer
         self.hidden = [] # list of tensors containing hidden activations
+        self.ignore_flag = kwargs.pop('ignore_flag', True) # setting for whether to ignore flagged layers
         self.initialize(**kwargs) # initialize the architecture using child class method
 
     @abstractmethod
@@ -100,12 +101,27 @@ class AlignmentNetwork(nn.Module, ABC):
         """convenience method for getting the number of alignment layers"""
         return len(self.get_alignment_layers())
     
+    def _include_layer(self, metaprms):
+        """
+        internal method for checking whether to include a registered layer
+
+        ignore conditions:
+        if metaprms['ignore']==True, will always ignore the layer
+        if metaprms['flag']==True and self.ignore_flag==True, will ignore
+        """
+        return not metaprms['ignore'] and not(metaprms['flag'] and self.ignore_flag)
+    
+    def set_ignore_flag(self, ignore_flag):
+        """method for setting the ignore_flag switch"""
+        assert isinstance(ignore_flag, bool), "ignore_flag setting must be a bool"
+        self.ignore_flag = ignore_flag
+
     def forward(self, x, store_hidden=False):
         """standard forward pass of all layers with option of storing hidden activations (and output)"""
         self.hidden = [] # always reset so as to not keep a previous forward pass accidentally
-        for layer, metaprms in zip(self.layers, self.metaparameters):
+        for layer in self.layers:
             x = layer(x) # pass through next layer
-            if store_hidden and not metaprms['ignore']: 
+            if store_hidden:
                 self.hidden.append(x)
         return x
     
@@ -154,21 +170,47 @@ class AlignmentNetwork(nn.Module, ABC):
             setattr(self, 'dropout', p)
         
     @torch.no_grad()
-    def get_activations(self, x=None, precomputed=False):
-        """convenience method for getting list of intermediate activations throughout the network"""
+    def get_layer_outputs(self, x=None, precomputed=False):
+        """method for getting list of layer outputs throughout the network"""
         if not precomputed:
             if x is None:
                 raise ValueError("x needs to be provided if precomputed is False")
             else: 
+                # do a forward pass and store hidden activations if not precomputed
                 _ = self.forward(x, store_hidden=True)
-        return self.hidden
+        
+        # filter activations by outputs of alignment layers 
+        layer_outputs = []
+        for hidden, metaprms in zip(self.hidden, self.metaparameters):
+            if self._include_layer(metaprms):
+                layer_outputs.append(hidden)
+
+        # return outputs
+        return layer_outputs
+    
+    @torch.no_grad()
+    def get_layer_inputs(self, x, precomputed=False):
+        """method for getting list of layer inputs throughout the network"""
+        if not precomputed:
+            # do a forward pass and store hidden activations if not precomputed
+            _ = self.forward(x, store_hidden=True)
+        
+        # filter activations by inputs to alignment layers 
+        layer_inputs = []
+        possible_inputs = [x, *self.hidden[:-1]]
+        for inputs, metaprms in zip(possible_inputs, self.metaparameters):
+            if self._include_layer(metaprms):
+                layer_inputs.append(inputs)
+
+        # return outputs
+        return layer_inputs
     
     @torch.no_grad()
     def get_alignment_layers(self):
         """convenience method for retrieving registered layers for alignment measurements throughout the network"""
         layers = []
         for layer, metaprms in zip(self.layers, self.metaparameters):
-            if not metaprms['ignore']:
+            if self._include_layer(metaprms):
                 layers.append(metaprms['layer_handle'](layer))
         return layers
     
@@ -177,7 +219,7 @@ class AlignmentNetwork(nn.Module, ABC):
         """convenience method for retrieving registered layers for alignment measurements throughout the network"""
         metaparameters = []
         for metaprms in self.metaparameters:
-            if not metaprms['ignore']:
+            if self._include_layer(metaprms):
                 metaparameters.append(metaprms)
         return metaparameters
     
@@ -222,16 +264,16 @@ class AlignmentNetwork(nn.Module, ABC):
     @torch.no_grad()
     def measure_alignment(self, x, precomputed=False, method='alignment'):
         # Pre-layer activations start with input (x) and ignore output
-        activations = [x, *self.get_activations(x=x, precomputed=precomputed)[:-1]]
+        layer_inputs = self.get_layer_inputs(x, precomputed=precomputed)
         alignment = []
-        for activation, layer, metaprms in zip(activations, self.get_alignment_layers(), self.get_alignment_metaparameters()):
-            alignment.append(metaprms['alignment_method'](activation, layer, method=method))
+        for input, layer, metaprms in zip(layer_inputs, self.get_alignment_layers(), self.get_alignment_metaparameters()):
+            alignment.append(metaprms['alignment_method'](input, layer, method=method))
         return alignment
     
     @torch.no_grad()
     def measure_correlation(self, x, precomputed=False, alpha=1.0, reduced=True):
         correlation = []
-        zipped = zip(self.get_activations(x=x, precomputed=precomputed), self.get_alignment_metaparameters())
+        zipped = zip(self.get_layer_outputs(x=x, precomputed=precomputed), self.get_alignment_metaparameters())
         for activation, metaprms in zipped:
             ccorr = metaprms['correlation_method'](activation, alpha=alpha)
             if reduced: 
@@ -266,7 +308,7 @@ class AlignmentNetwork(nn.Module, ABC):
                 fraction_dropout = len(dropout_idx) / x.shape[1]
                 x[:, dropout_idx] = 0
                 x = x * (1 - fraction_dropout)
-            if not metaprms['ignore']:
+            if self._include_layer(metaprms):
                 activations.append(x) 
             
         return x, activations
@@ -304,13 +346,11 @@ class AlignmentNetwork(nn.Module, ABC):
 
         # store input and measure activations for every element in dataloader
         allinputs = []
-        activations = []
         dataloop = tqdm(dataloader) if with_updates else dataloader
-        for input, label in dataloop:    
-            allinputs.append(input)
+        for input, label in dataloop:
             input = input.to(DEVICE)
             label = label.to(DEVICE)
-            activations.append(self.get_activations(x=input, precomputed=False))
+            allinputs.append(self.get_layer_inputs(input, precomputed=False))
 
         # return network to original training mode
         if training_mode: 
@@ -319,11 +359,8 @@ class AlignmentNetwork(nn.Module, ABC):
             self.eval()
 
         # create large list of tensors containing input to each layer
-        num_layers = len(activations[0])
-        inputs_to_layers = []
-        inputs_to_layers.append(torch.cat(allinputs,dim=0).detach().cpu())
-        for layer in range(num_layers-1):
-            inputs_to_layers.append(torch.cat([act[layer] for act in activations],dim=0).detach().cpu())
+        inputs_to_layers = [torch.cat([input[layer] for input in allinputs], dim=0).detach().cpu()
+                            for layer in range(self.num_layers())]
 
         # retrieve weights and flatten inputs if required
         weights = []
@@ -364,6 +401,8 @@ class AlignmentNetwork(nn.Module, ABC):
         zipped = zip(inputs_to_layers, weights, metaprms)
         for input, weight, metaprm in zipped:
             if not full_conv and metaprm['unfold']:
+                print('yeah this is happening!')
+                
                 # measure variance across samples (each batch element of the dataset)
                 # average variance across dimensions of weight across each stride
                 bvar = torch.mean(torch.var(input, dim=0), dim=0) 
