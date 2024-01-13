@@ -25,6 +25,5 @@ if __name__ == '__main__':
     net = get_model(args.network, build=True).to(DEVICE)
     dataset = get_dataset(args.dataset, build=True, transform_parameters=net)
 
-    # print experiment parameters
-    print(vars(args))
-
+    net.measure_eigenfeatures(dataset.test_loader)
+    
