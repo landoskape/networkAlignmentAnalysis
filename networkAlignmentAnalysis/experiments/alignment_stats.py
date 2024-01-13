@@ -60,7 +60,7 @@ class AlignmentStatistics(Experiment):
         dataset = get_dataset(self.args.dataset,
                               build=True,
                               transform_parameters=nets[0],
-                              device=nets[0].device)
+                              device=self.args.device)
 
         # train networks
         train_results, test_results = self.train_networks(nets, optimizers, dataset)
@@ -123,7 +123,7 @@ class AlignmentStatistics(Experiment):
         
         # get network
         model_kwargs = {}
-        if self.args.model == 'AlexNet' and self.args.dataset == 'MNIST':
+        if self.args.network == 'AlexNet' and self.args.dataset == 'MNIST':
             model_kwargs['num_classes'] = 10
 
         nets = [get_model(self.args.network, build=True, dropout=self.args.default_dropout, **model_kwargs)
