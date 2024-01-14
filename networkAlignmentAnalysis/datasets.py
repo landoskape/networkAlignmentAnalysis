@@ -170,14 +170,67 @@ class MNIST(DataSet):
         kwargs = dict(
             train=train,
             root=self.dataset_path,
-            download=True,
+            download=False,
             transform=self.transform,
         )
         return kwargs
+    
+
+class CIFAR10(DataSet):
+    def set_properties(self):
+        """defines the required properties for CIFAR10"""
+        self.dataset_path = files.dataset_path("CIFAR10")
+        self.dataset_constructor = torchvision.datasets.CIFAR10
+        self.loss_function = nn.CrossEntropyLoss()
+        self.dist_params = dict(mean=0.1307, std=0.3081)
+
+    def make_transform(self, resize=None, flatten=False):
+        """
+        create transform for dataloader
+        resize is the new (H, W) shape of the image for the transforms.Resize transform (or None)
+        flatten is a boolean indicating whether to flatten the image, (i.e. for a linear input layer)
+        """
+        # default transforms
+        use_transforms = [
+            # Convert PIL Image to PyTorch Tensor
+            transforms.ToTensor(), 
+            # Normalize inputs to canonical distribution
+            transforms.Normalize((self.dist_params['mean'],), (self.dist_params['std'],)), 
+            ]
+        
+        # extra transforms depending on network
+        if resize:
+            use_transforms.append(transforms.Resize(resize))
+        if flatten:
+            use_transforms.append(transforms.Lambda(torch.flatten))
+
+        # store composed transformation
+        self.transform = transforms.Compose(use_transforms)
+
+    def dataset_kwargs(self, train=True):
+        """set data constructor kwargs for CIFAR10"""
+        kwargs = dict(
+            train=train,
+            root=self.dataset_path,
+            download=False,
+            transform=self.transform,
+        )
+        return kwargs
+    
+
+class CIFAR100(CIFAR10):
+    def set_properties(self):
+        """defines the required properties for CIFAR100"""
+        self.dataset_path = files.dataset_path("CIFAR100")
+        self.dataset_constructor = torchvision.datasets.CIFAR100
+        self.loss_function = nn.CrossEntropyLoss()
+        self.dist_params = dict(mean=0.1307, std=0.3081)
 
 
 DATASET_REGISTRY = {
     'MNIST': MNIST,
+    'CIFAR10': CIFAR10,
+    'CIFAR100': CIFAR100,
 }
 
 def get_dataset(dataset_name, build=False, transform_parameters={}, loader_parameters={}, **kwargs):

@@ -28,3 +28,5 @@ def dataset_path(dataset):
     """path to specific stored datasets (they all have different requirements)"""
     if dataset=='MNIST':
         return data_path()
+    elif dataset=='CIFAR10' or dataset=='CIFAR100':
+        return data_path()
