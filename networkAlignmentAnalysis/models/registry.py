@@ -57,12 +57,8 @@ def get_model(model_name, build=False, dataset=None, **kwargs):
     model = MODEL_REGISTRY[model_name]
     if build:
         if dataset is not None:
-            if model_name not in DATASET_ARGUMENTS:
-                raise ValueError(f"Model ({model_name}) is not in DATASET_ARGUMENTS lookup dictionary.")
-            if dataset not in DATASET_ARGUMENTS[model_name]:
-                raise ValueError(f"Dataset ({dataset}) is not in the DATASET_ARGUMENTS lookup for model ({model_name})")
-            # get dataset specific arguments
-            dataset_specific_arguments = DATASET_ARGUMENTS[model_name][dataset]
+            # get default dataset specific arguments
+            dataset_specific_arguments = get_model_parameters(model_name, dataset)
 
             # for every dataset specific argument, if the key isn't provided in kwargs, 
             # then update it using the dataset_specific_arguments
