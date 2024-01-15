@@ -6,7 +6,7 @@ from matplotlib import pyplot as plt
 import matplotlib as mpl
 
 from .experiment import Experiment
-from ..models.registry import get_model
+from ..models.registry import get_model, get_model_parameters
 from ..datasets import get_dataset
 from .. import train
 from ..utils import compute_stats_by_type, transpose_list, named_transpose
@@ -127,6 +127,7 @@ class AlignmentComparison(Experiment):
         with each network
         """
         model_constructor = get_model(self.args.network)
+        model_parameters = get_model_parameters(self.args.network, self.args.dataset)
 
         # get optimizer
         if self.args.optimizer == 'Adam':
@@ -135,17 +136,11 @@ class AlignmentComparison(Experiment):
             optim = torch.optim.SGD
         else:
             raise ValueError(f"optimizer ({self.args.optimizer}) not recognized")
-        
-        # build necessary kwargs
-        if self.args.network == 'AlexNet' and self.args.dataset == 'MNIST':
-            model_kwargs = {'num_classes': 10}
-        else:
-            model_kwargs = {}
 
         # compare learning rates
         if self.args.comparison == 'lr':
             lrs = [lr for lr in self.args.lrs for _ in range(self.args.replicates)]
-            nets = [model_constructor(dropout=self.args.default_dropout, **model_kwargs) for _ in lrs]
+            nets = [model_constructor(dropout=self.args.default_dropout, **model_parameters) for _ in lrs]
             nets = [net.to(self.device) for net in nets]
             optimizers = [optim(net.parameters(), lr=lr, weight_decay=self.args.default_wd)
                         for net, lr in zip(nets, lrs)]
@@ -159,7 +154,7 @@ class AlignmentComparison(Experiment):
         # compare training with input noise
         elif self.args.comparison == 'noise':
             noises = [nnorm for nnorm in self.args.noises for _ in range(self.args.replicates)]
-            nets = [model_constructor(dropout=self.args.default_dropout, **model_kwargs) for _ in noises]
+            nets = [model_constructor(dropout=self.args.default_dropout, **model_parameters) for _ in noises]
             nets = [net.to(self.device) for net in nets]
             optimizers = [optim(net.parameters(), lr=self.args.default_lr) for net in nets]
             prms = {
@@ -175,7 +170,7 @@ class AlignmentComparison(Experiment):
             weight_decay_values = [self.args.compare_wd * (reg == 'weight_decay') for reg in self.args.regularizers]
             dropouts = [do for do in dropout_values for _ in range(self.args.replicates)]
             weight_decays = [wd for wd in weight_decay_values for _ in range(self.args.replicates)]
-            nets = [model_constructor(dropout=do, **model_kwargs) for do in dropouts]
+            nets = [model_constructor(dropout=do, **model_parameters) for do in dropouts]
             nets = [net.to(self.device) for net in nets]
             optimizers = [optim(net.parameters(), lr=self.args.default_lr, weight_decay=wd)
                         for net, wd in zip(nets, weight_decays)]

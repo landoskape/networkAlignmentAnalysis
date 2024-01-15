@@ -121,12 +121,7 @@ class AlignmentStatistics(Experiment):
         else:
             raise ValueError(f"optimizer ({self.args.optimizer}) not recognized")
         
-        # get network
-        model_kwargs = {}
-        if self.args.network == 'AlexNet' and self.args.dataset == 'MNIST':
-            model_kwargs['num_classes'] = 10
-
-        nets = [get_model(self.args.network, build=True, dropout=self.args.default_dropout, **model_kwargs)
+        nets = [get_model(self.args.network, build=True, dataset=self.args.dataset, dropout=self.args.default_dropout)
                 for _ in range(self.args.replicates)]
         nets = [net.to(self.device) for net in nets]
         optimizers = [optim(net.parameters(), lr=self.args.default_lr, weight_decay=self.args.default_wd)

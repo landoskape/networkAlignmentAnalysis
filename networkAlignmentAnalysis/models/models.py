@@ -36,23 +36,48 @@ class MLP(AlignmentNetwork):
             'MNIST': {
                 'flatten': True,
                 'resize': None, 
-            }
+            },
+            'CIFAR10': {
+                'flatten': True,
+                'resize': None,
+            },
+            'CIFAR100': {
+                'flatten': True,
+                'resize': None,
+            },
         }
         if dataset not in params: 
             raise ValueError(f"Dataset ({dataset}) is not in params dictionary: {[k for k in params]}")
         return params[dataset]
 
+
 class CNN2P2(AlignmentNetwork):
     """
     CNN with 2 convolutional layers, a max pooling stage, and 2 feedforward layers with dropout
+
+    Has flexible build method but strict 2 convolutional / max pooling / 2 feedforward architecture
     """
-    def initialize(self, dropout=0.5, each_stride=True, flag=True):
+    def initialize(self,
+                   in_channels=1, 
+                   output_dim=10, 
+                   channels=[32, 64],
+                   kernel_size=[3, 3],
+                   stride=[2, 2],
+                   padding=[1, 1],
+                   num_hidden=[256, 256],
+                   dropout=0.5, 
+                   each_stride=True, 
+                   flag=True):
         """architecture definition"""
-        layer1 = nn.Sequential(nn.Conv2d(1, 32, kernel_size=3, stride=2, padding=1), nn.ReLU())
-        layer2 = nn.Sequential(nn.Conv2d(32, 64, kernel_size=3, stride=2, padding=1), 
+
+        for val, name in zip((channels, kernel_size, stride, padding), ('channels', 'kernel_size', 'stride', 'padding')):
+            assert len(val)==2, f"{name} must be 2 elements describing the parameter for each of two convolutional layers"
+        assert len(num_hidden)==2, "num_hidden must be 2 elements describing the number of hidden for each of two feedforward layers"
+        layer1 = nn.Sequential(nn.Conv2d(in_channels, channels[0], kernel_size=kernel_size[0], stride=stride[0], padding=padding[0]), nn.ReLU())
+        layer2 = nn.Sequential(nn.Conv2d(channels[0], channels[1], kernel_size=kernel_size[1], stride=stride[1], padding=padding[1]), 
                                nn.ReLU(), nn.MaxPool2d(kernel_size=3), nn.Flatten(start_dim=1))
-        layer3 = nn.Sequential(nn.Dropout(p=dropout), nn.Linear(256, 256), nn.ReLU())
-        layer4 = nn.Sequential(nn.Dropout(p=dropout), nn.Linear(256, 10))
+        layer3 = nn.Sequential(nn.Dropout(p=dropout), nn.Linear(num_hidden[0], num_hidden[1]), nn.ReLU())
+        layer4 = nn.Sequential(nn.Dropout(p=dropout), nn.Linear(num_hidden[1], output_dim))
 
         self.register_layer(layer1, **default_metaprms_conv2d(0, each_stride=each_stride, flag=False))
         self.register_layer(layer2, **default_metaprms_conv2d(0, each_stride=each_stride, flag=flag))
@@ -69,7 +94,15 @@ class CNN2P2(AlignmentNetwork):
             'MNIST': {
                 'flatten': False,
                 'resize': None, 
-            }
+            },
+            'CIFAR10': {
+                'flatten': False,
+                'resize': None, 
+            },
+            'CIFAR100': {
+                'flatten': False,
+                'resize': None,
+            },
         }
         if dataset not in params: 
             raise ValueError(f"Dataset ({dataset}) is not in params dictionary: {[k for k in params]}")
@@ -164,7 +197,15 @@ class AlexNet(AlignmentNetwork):
                 'flatten': False,
                 'resize': (224, 224), 
                 'extra_transform': gray_to_rgb,
-            }
+            },
+            'CIFAR10': {
+                'flatten': False,
+                'resize': (224, 224),
+            },
+            'CIFAR100': {
+                'flatten': False,
+                'resize': (224, 224),
+            },
         }
         if dataset not in params: 
             raise ValueError(f"Dataset ({dataset}) is not in params dictionary: {[k for k in params]}")
