@@ -400,8 +400,6 @@ class AlignmentNetwork(nn.Module, ABC):
         zipped = zip(inputs_to_layers, weights, metaprms)
         for input, weight, metaprm in zipped:
             if not full_conv and metaprm['unfold']:
-                print('yeah this is happening!')
-                
                 # measure variance across samples (each batch element of the dataset)
                 # average variance across dimensions of weight across each stride
                 bvar = torch.mean(torch.var(input, dim=0), dim=0) 
