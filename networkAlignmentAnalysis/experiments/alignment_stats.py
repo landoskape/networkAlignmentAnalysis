@@ -41,7 +41,8 @@ class AlignmentStatistics(Experiment):
         # some metaparameters for the experiment
         parser.add_argument('--epochs', type=int, default=100) # how many rounds of training to do
         parser.add_argument('--replicates', type=int, default=5) # how many copies of identical networks to train
-        
+        parser.add_argument('--use-flag', default=False, action='store_true', help='if used, will include flagged layers in analyses')
+
         # return parser
         return parser
     
@@ -121,7 +122,7 @@ class AlignmentStatistics(Experiment):
         else:
             raise ValueError(f"optimizer ({self.args.optimizer}) not recognized")
         
-        nets = [get_model(self.args.network, build=True, dataset=self.args.dataset, dropout=self.args.default_dropout)
+        nets = [get_model(self.args.network, build=True, dataset=self.args.dataset, dropout=self.args.default_dropout, ignore_flag=not(self.args.use_flag))
                 for _ in range(self.args.replicates)]
         nets = [net.to(self.device) for net in nets]
         optimizers = [optim(net.parameters(), lr=self.args.default_lr, weight_decay=self.args.default_wd)

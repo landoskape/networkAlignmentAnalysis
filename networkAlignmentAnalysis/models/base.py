@@ -41,7 +41,7 @@ class AlignmentNetwork(nn.Module, ABC):
         self.layers = nn.ModuleList() # a list of all modules in the forward pass
         self.metaparameters = [] # list of dictionaries containing metaparameters for each layer
         self.hidden = [] # list of tensors containing hidden activations
-        self.ignore_flag = kwargs.pop('ignore_flag', True) # setting for whether to ignore flagged layers
+        self.ignore_flag = kwargs.pop('ignore_flag', False) # setting for whether to ignore flagged layers
         self.initialize(**kwargs) # initialize the architecture using child class method
 
     @abstractmethod

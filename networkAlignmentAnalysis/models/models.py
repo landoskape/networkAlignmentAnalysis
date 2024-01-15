@@ -79,7 +79,7 @@ class CNN2P2(AlignmentNetwork):
         layer3 = nn.Sequential(nn.Dropout(p=dropout), nn.Linear(num_hidden[0], num_hidden[1]), nn.ReLU())
         layer4 = nn.Sequential(nn.Dropout(p=dropout), nn.Linear(num_hidden[1], output_dim))
 
-        self.register_layer(layer1, **default_metaprms_conv2d(0, each_stride=each_stride, flag=False))
+        self.register_layer(layer1, **default_metaprms_conv2d(0, each_stride=each_stride, flag=flag))
         self.register_layer(layer2, **default_metaprms_conv2d(0, each_stride=each_stride, flag=flag))
         self.register_layer(layer3, **default_metaprms_linear(1))
         self.register_layer(layer4, **default_metaprms_linear(1))
