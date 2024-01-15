@@ -200,7 +200,7 @@ class CIFAR10(DataSet):
             # Convert PIL Image to PyTorch Tensor
             transforms.ToTensor(), 
             # Normalize inputs to canonical distribution
-            transforms.Normalize((self.dist_params['mean'],), (self.dist_params['std'],)), 
+            transforms.Normalize((self.dist_params['mean']), (self.dist_params['std'])), 
             ]
         
         # extra transforms depending on network
