@@ -11,12 +11,17 @@ from .models.base import AlignmentNetwork
 
 REQUIRED_PROPERTIES = ['dataset_path', 'dataset_constructor', 'loss_function']
 
-def default_loader_parameters(batch_size=1024):
+def default_loader_parameters(batch_size=1024, num_workers=2, shuffle=True, pin_memory=True, persistent_workers=True):
+    """
+    contains the default dataloader parameters with the option of updating them
+    using key word argument
+    """
     default_parameters = dict(
         batch_size=batch_size,
-        num_workers=multiprocessing.cpu_count()-2, # use the computer without stealing all resources
-        shuffle=True,
-        pin_memory=True,
+        num_workers=num_workers, # usually 2 workers is appropriate for swapping loading during batch processing
+        shuffle=shuffle,
+        pin_memory=pin_memory,
+        persistent_workers=persistent_workers,
     )
     return default_parameters
 
@@ -182,7 +187,7 @@ class CIFAR10(DataSet):
         self.dataset_path = files.dataset_path("CIFAR10")
         self.dataset_constructor = torchvision.datasets.CIFAR10
         self.loss_function = nn.CrossEntropyLoss()
-        self.dist_params = dict(mean=0.1307, std=0.3081)
+        self.dist_params = dict(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5])
 
     def make_transform(self, resize=None, flatten=False):
         """
@@ -224,7 +229,7 @@ class CIFAR100(CIFAR10):
         self.dataset_path = files.dataset_path("CIFAR100")
         self.dataset_constructor = torchvision.datasets.CIFAR100
         self.loss_function = nn.CrossEntropyLoss()
-        self.dist_params = dict(mean=0.1307, std=0.3081)
+        self.dist_params = dict(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5])
 
 
 DATASET_REGISTRY = {
