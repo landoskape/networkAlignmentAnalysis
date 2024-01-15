@@ -5,7 +5,7 @@ from pathlib import Path
 PATH_REGISTRY = {
     'DESKTOP-M2J64J2': Path('C:/Users/andrew/Documents/machineLearning'),
     'Celias-MBP.lan': Path('/Users/celiaberon/Documents/machine_learning'),
-    'cberon': Path('/n/home00/cberon/datasets/')
+    'cberon': Path('/n/home00/cberon/alignment/')
 }
 
 def get_hostname():
