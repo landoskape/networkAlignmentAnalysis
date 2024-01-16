@@ -387,6 +387,7 @@ class AlignmentStatistics(Experiment):
     def plot_eigenfeatures(self, results):
         """method for plotting results related to eigen-analysis"""
         beta, eigvals = results['beta'], results['eigvals']
+        beta = [torch.abs(b) for b in beta]
 
         num_types = 1
         labels = [f"fill me in :("]

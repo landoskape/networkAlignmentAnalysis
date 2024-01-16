@@ -446,7 +446,8 @@ class AlignmentComparison(Experiment):
     def plot_eigenfeatures(self, results, prms):
         """method for plotting results related to eigen-analysis"""
         beta, eigvals = results['beta'], results['eigvals']
-
+        beta = [torch.abs(b) for b in beta]
+        
         num_types = len(prms['vals'])
         labels = [f"{prms['name']}={val}" for val in prms['vals']]
         cmap = mpl.colormaps['tab10']

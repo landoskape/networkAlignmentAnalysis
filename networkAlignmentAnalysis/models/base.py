@@ -313,7 +313,7 @@ class AlignmentNetwork(nn.Module, ABC):
         return x, activations
     
     @torch.no_grad()
-    def measure_eigenfeatures(self, dataloader, DEVICE=None, with_updates=True, full_conv=False):
+    def measure_eigenfeatures(self, dataloader, class_betas=False, DEVICE=None, with_updates=True, full_conv=False):
         """
         measure the eigenvalues and eigenvectors of the input to each layer
         and also measure how much each weight array uses each eigenvector
@@ -324,14 +324,12 @@ class AlignmentNetwork(nn.Module, ABC):
         algorithm is best for this. But it still takes a while so shouldn't be
         done frequently, only after training for important networks. 
 
+        if class_betas=True, will measure the betas (projection onto eigenvectors)
+
         **full_conv** is used to determine whether to unfold convolutional layers
         -- if full_conv=True, will unfold and measure eigenfeatures that way
         -- if full_conv=False, will measure for each stride (and take the average
         across strides weighted by the variance of the input data)
-
-        soon I'll get it working where I measure the eigenfeatures for each
-        stride independently and do a weighted average based on the norm of
-        the activity in each stride.
         """
         # Set device automatically if not provided
         if DEVICE is None: 
@@ -345,11 +343,12 @@ class AlignmentNetwork(nn.Module, ABC):
 
         # store input and measure activations for every element in dataloader
         allinputs = []
+        alllabels = []
         dataloop = tqdm(dataloader) if with_updates else dataloader
         for input, label in dataloop:
             input = input.to(DEVICE)
-            label = label.to(DEVICE)
             allinputs.append(self.get_layer_inputs(input, precomputed=False))
+            alllabels.append(label)
 
         # return network to original training mode
         if training_mode: 
@@ -360,6 +359,9 @@ class AlignmentNetwork(nn.Module, ABC):
         # create large list of tensors containing input to each layer
         inputs_to_layers = [torch.cat([input[layer] for input in allinputs], dim=0).detach().cpu()
                             for layer in range(self.num_layers())]
+        
+        # concatenate label tensor
+        labels = torch.cat(alllabels)
 
         # retrieve weights and flatten inputs if required
         weights = []
@@ -458,7 +460,7 @@ class AlignmentNetwork(nn.Module, ABC):
 
                 # Measure abs value of dot product of weights on eigenvectors for each layer
                 weight = weight / torch.norm(weight, dim=1, keepdim=True)
-                beta.append(torch.abs(weight.cpu() @ v))
+                beta.append(weight.cpu() @ v)
 
                 # Append eigenvalues and eigenvectors to output
                 eigenvalues.append(w)
