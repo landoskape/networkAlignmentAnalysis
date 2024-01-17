@@ -4,8 +4,10 @@ from abc import ABC, abstractmethod
 import torch
 from torch import nn
 
+from warnings import warn
+
 from .layers import LAYER_REGISTRY, REGISTRY_REQUIREMENTS, check_metaparameters
-from ..utils import check_iterable, get_maximum_strides, batch_cov, named_transpose, weighted_average
+from ..utils import check_iterable, get_maximum_strides, batch_cov, named_transpose, weighted_average, get_device
 
 class AlignmentNetwork(nn.Module, ABC):
     """
@@ -313,7 +315,7 @@ class AlignmentNetwork(nn.Module, ABC):
         return x, activations
     
     @torch.no_grad()
-    def measure_eigenfeatures(self, dataloader, class_betas=False, DEVICE=None, with_updates=True, full_conv=False):
+    def measure_eigenfeatures(self, dataloader, DEVICE=None, with_updates=True, full_conv=False):
         """
         measure the eigenvalues and eigenvectors of the input to each layer
         and also measure how much each weight array uses each eigenvector
@@ -323,8 +325,6 @@ class AlignmentNetwork(nn.Module, ABC):
         a good idea to do it sometimes -- I think sklearn's IncrementalPCA 
         algorithm is best for this. But it still takes a while so shouldn't be
         done frequently, only after training for important networks. 
-
-        if class_betas=True, will measure the betas (projection onto eigenvectors)
 
         **full_conv** is used to determine whether to unfold convolutional layers
         -- if full_conv=True, will unfold and measure eigenfeatures that way
@@ -343,12 +343,10 @@ class AlignmentNetwork(nn.Module, ABC):
 
         # store input and measure activations for every element in dataloader
         allinputs = []
-        alllabels = []
         dataloop = tqdm(dataloader) if with_updates else dataloader
         for input, label in dataloop:
             input = input.to(DEVICE)
             allinputs.append(self.get_layer_inputs(input, precomputed=False))
-            alllabels.append(label)
 
         # return network to original training mode
         if training_mode: 
@@ -360,9 +358,6 @@ class AlignmentNetwork(nn.Module, ABC):
         inputs_to_layers = [torch.cat([input[layer] for input in allinputs], dim=0).detach().cpu()
                             for layer in range(self.num_layers())]
         
-        # concatenate label tensor
-        labels = torch.cat(alllabels)
-
         # retrieve weights and flatten inputs if required
         weights = []
         metaprms = self.get_alignment_metaparameters()
@@ -466,17 +461,66 @@ class AlignmentNetwork(nn.Module, ABC):
                 eigenvalues.append(w)
                 eigenvectors.append(v)
 
-
-        # remove eventually after making sure everything works:
-        # -- Replaced with code in above for loop --
-        # # Measure absolute value of dot product of weights on eigenvectors for each layer
-        # beta = []
-        # for evec, weight in zip(eigenvectors, weights):
-        #     weight = weight / torch.norm(weight,dim=1,keepdim=True)
-        #     beta.append(torch.abs(weight.cpu() @ evec))
-        # ------------------------------------------
-            
         return beta, eigenvalues, eigenvectors
+    
+    def measure_class_eigenfeatures(self, dataloader, eigenvectors, rms=False, DEVICE=None, with_updates=True):
+        """
+        propagate an entire dataset through the network and measure the contribution
+        of each eigenvector to each element of the class
+
+        to keep things in a useful tensor format, will match samples across classes 
+        and therefore may ignore "extra" samples if the dataloader doesn't have equal
+        representation across classes. Keep in mind it will use the first N samples 
+        per class where N=min_samples_per_class, so using a random dataloader is smart.
+
+        returns list of beta by class, where the list has len()==num_layers
+        and each element is a tensor with size (num_classes, num_dimensions, num_samples_per_class)
+
+        if rms=True, will convert beta_by_class to an average with the RMS method
+        """
+        # Set device automatically if not provided
+        DEVICE = get_device(self)
+
+        allinputs = []
+        alllabels = []
+        dataloop = tqdm(dataloader) if with_updates else dataloader
+        for input, label in dataloop:
+            input = input.to(DEVICE)
+            alllabels.append(label)
+            allinputs.append(self.get_layer_inputs(input, precomputed=False))
+
+        # concatenate input to layers and labels into single tensors
+        inputs_to_layers = [torch.cat([input[layer] for input in allinputs], dim=0).detach().cpu()
+                            for layer in range(self.num_layers())]
+        labels = torch.cat(alllabels)
+        
+        # get stacked indices to the elements of each class
+        num_classes = len(dataloader.dataset.classes)
+        idx_to_class = [torch.where(labels==ii)[0] for ii in range(num_classes)]
+        num_per_class = [len(idx) for idx in idx_to_class]
+        min_per_class = min(num_per_class)
+        if any([npc>min_per_class for npc in num_per_class]):
+            max_per_class = max(num_per_class)
+            if (max_per_class / min_per_class) > 2:
+                warn_message = f"Number of elements to each class is unequal (min={min_per_class}, max={max_per_class}). Clipping examples."
+                warn(warn_message, RuntimeWarning, stacklevel=1)
+            idx_to_class = [idx[:min_per_class] for idx in idx_to_class]
+
+        # use single tensor for fast indexing
+        idx_to_class = torch.stack(idx_to_class).unsqueeze(1)
+
+        # measure the contribution of each eigenvector on the representation of each input
+        beta_activity = [(input @ evec).T.unsqueeze(0) for input, evec in zip(inputs_to_layers, eigenvectors)]
+
+        # organize activity by class in extra dimension
+        beta_by_class = [torch.gather(betas.expand(num_classes, -1, -1), 2, idx_to_class.expand(-1, betas.size(1), -1)) for betas in beta_activity]
+
+        # get average by class with RMS method (root-mean-square) if requested
+        if rms:
+            beta_by_class = [torch.sqrt(torch.mean(beta**2, dim=2)) for beta in beta_by_class]
+        
+        # return beta by class in requested format (average or not based on rms value)
+        return beta_by_class
     
 
 # def ExperimentalNetwork(AlignmentNetwork):
