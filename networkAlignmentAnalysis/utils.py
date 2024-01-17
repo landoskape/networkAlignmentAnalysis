@@ -18,10 +18,15 @@ def align_by_layer(full, layer):
 # ------------------------
 
 
-def get_device(tensor):
-    """simple method to get device of input tensor"""
-    return 'cuda' if tensor.is_cuda else 'cpu'
-
+def get_device(obj):
+    """simple method to get device of input tensor or nn.Module"""
+    if isinstance(obj, torch.nn.Module):
+        return next(obj.parameters()).device.type
+    elif isinstance(obj, torch.Tensor):
+        return 'cuda' if obj.is_cuda else 'cpu'
+    else:
+        raise ValueError("")
+    
 def check_iterable(val):
     """duck-type check if val is iterable"""
     try:
