@@ -99,8 +99,14 @@ class AlignmentNetwork(nn.Module, ABC):
         self.layers.append(layer)
         self.metaparameters.append(metaparameters)
 
-    def num_layers(self):
-        """convenience method for getting the number of alignment layers"""
+    def num_layers(self, all=False):
+        """
+        convenience method for getting the number of layers in network
+        if all=False (default), will get the number of alignment layers
+        if all=True, will get total number of registered layers in network
+        """
+        if all: 
+            return len(self.layers)
         return len(self.get_alignment_layers())
     
     def _include_layer(self, metaprms):
@@ -226,6 +232,15 @@ class AlignmentNetwork(nn.Module, ABC):
         return metaparameters
     
     @torch.no_grad()
+    def get_alignment_layer_indices(self):
+        """convenience method for retrieving the absolute indices of alignment layers throughout the network"""
+        idx_layers = []
+        for idx, metaprms in enumerate(self.metaparameters):
+            if self._include_layer(metaprms):
+                idx_layers.append(idx)
+        return idx_layers
+    
+    @torch.no_grad()
     def get_alignment_weights(self, with_unfold=False, input_to_layers=None):
         """
         convenience method for retrieving registered weights for alignment measurements throughout the network
@@ -289,12 +304,42 @@ class AlignmentNetwork(nn.Module, ABC):
         perform forward pass with targeted dropout of hidden channels
 
         **idxs** and **layers** are matched length tuples describing the layer to dropout
-        in and the idxs in that layer to dropout. The dropout happens after the layer (so
+        in and the idxs in that layer to dropout. The dropout happens in the activations 
+        of the layer (so layer=(0) corresponds to the output of the first layer).
+
+        returns the output accounting for targeted dropout and also the full list of hidden
+        activations after targeted dropout
+        """
+        assert check_iterable(idxs) and check_iterable(layers), "idxs and layers need to be iterables with the same length"
+        assert len(idxs)==len(layers), "idxs and layers need to be iterables with the same length"
+        assert len(layers)==len(set(layers)), "layers must not have any repeated elements"
+        assert all([layer>=0 and layer<len(self.layers)-1 for layer in layers]), "dropout only works on first N-1 layers"
+        
+        activations = []
+        for idx_layer, (layer, metaprms) in enumerate(zip(self.layers, self.metaparameters)):
+            x = layer(x) # pass through next layer
+            if idx_layer in layers:
+                dropout_idx = idxs[{val:idx for idx, val in enumerate(layers)}[idx_layer]]
+                fraction_dropout = len(dropout_idx) / x.shape[1]
+                x[:, dropout_idx] = 0
+                x = x * (1 - fraction_dropout)
+            if self._include_layer(metaprms):
+                activations.append(x) 
+            
+        return x, activations
+    
+    @torch.no_grad()
+    def forward_eigenvector_dropout(self, x, eigenvectors, idxs, layers):
+        """
+        perform forward pass with targeted dropout of activity on eigenvectors 
+
+        **eigenvectors**, **idxs** and **layers** are matched length tuples describing the
+        layer to dropout in, the eigenvectors of input to that layer, and the idxs of which
+        eigenvectors in that layer to dropout. The dropout happens after the layer (so 
         layer=(0) will correspond to the output of the first layer.
 
         returns the output accounting for targeted dropout and also the full list of hidden
-        activations after targeted dropout (can use forward with store_hidden=True) for 
-        hidden activations without targeted dropout and use self.eval() for no dropout at all
+        activations after targeted dropout
         """
         assert check_iterable(idxs) and check_iterable(layers), "idxs and layers need to be iterables with the same length"
         assert len(idxs)==len(layers), "idxs and layers need to be iterables with the same length"
