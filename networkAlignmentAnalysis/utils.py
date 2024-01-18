@@ -1,4 +1,5 @@
 from typing import List
+from contextlib import contextmanager
 import numpy as np
 import torch
 from matplotlib import pyplot as plt
@@ -35,6 +36,14 @@ def check_iterable(val):
         return False
     else:
         return True
+    
+@contextmanager
+def no_grad(no_grad=True):
+    if no_grad:
+        with torch.no_grad():
+            yield
+    else:
+        yield
 
 def smartcorr(input):
     """
@@ -47,16 +56,19 @@ def smartcorr(input):
     cc[:,idx_zeros] = 0
     return cc
 
-def batch_cov(input):
+def batch_cov(input, centered=True):
     """
     Performs batched covariance on input data of shape (batch, dim, samples)
 
     Where the resulting batch covariance matrix has shape (batch, dim, dim)
     and bcov[i] = torch.cov(input[i])
+
+    if centered=True (default) will subtract the means first
     """
     D = input.size(1)
-    centered_input = input - input.mean(dim=2, keepdim=True)
-    bcov = torch.bmm(centered_input, centered_input.transpose(1, 2))
+    if centered:
+        input = input - input.mean(dim=2, keepdim=True) 
+    bcov = torch.bmm(input, input.transpose(1, 2))
     bcov /= (D-1)
     return bcov
 
