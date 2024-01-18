@@ -7,7 +7,7 @@ from torch import nn
 from warnings import warn
 
 from .layers import LAYER_REGISTRY, REGISTRY_REQUIREMENTS, check_metaparameters
-from ..utils import check_iterable, get_maximum_strides, batch_cov, named_transpose, weighted_average, get_device
+from ..utils import check_iterable, get_maximum_strides, batch_cov, named_transpose, weighted_average, get_device, remove_by_idx
 
 class AlignmentNetwork(nn.Module, ABC):
     """
@@ -352,14 +352,16 @@ class AlignmentNetwork(nn.Module, ABC):
         hidden_inputs = []
         for idx_layer, (layer, metaprms) in enumerate(zip(self.layers, self.metaparameters)):
             if idx_layer in layers:
+                # get index to target layer 
                 idx_to_layer = {val:idx for idx, val in enumerate(layers)}[idx_layer]
+                # get dropout indices of which eigenvectors to remove
                 dropout_idx = idxs[idx_to_layer]
-                dropout_evec = eigenvectors[idx_to_layer].to(device)
+                # retrieve only the requested eigenvectors
+                dropout_evec = remove_by_idx(eigenvectors[idx_to_layer].to(device), dropout_idx, 1)
 
-                print("don't dropout by setting values to 0!")
-                dropout_evec[:, dropout_idx] = 0
                 # remove dropout eigenvectors by projecting and inverting 
                 x = torch.matmul(torch.matmul(x, dropout_evec), dropout_evec.T)
+                
                 # -- I think having a kwarg where you can either maintain the norm of the input or not is gonna work just fine --
                 # -- We can also use an eigenvalue based model where we correct the norm by the relative variance of dropped layers --
                 # -- ^^ on average I suppose it'll be the same..., but in practice the deviation will depend on each minibatch ^^ --
