@@ -502,7 +502,7 @@ class AlignmentComparison(Experiment):
                 ax[0, layer].set_xlabel('Input Dimension')
                 ax[1, layer].set_xlabel('Sorted Input Dim')
                 ax[0, layer].set_ylabel('Relative Eigval / Beta')
-                ax[1, layer].set_ylabel('Relative Beta')
+                ax[1, layer].set_ylabel('Relative Beta (Sorted)')
                 ax[0, layer].set_title(f"Layer {layer}")
                 ax[1, layer].set_title(f"Layer {layer}")
 
