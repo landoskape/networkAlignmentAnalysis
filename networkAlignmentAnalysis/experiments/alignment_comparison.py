@@ -53,7 +53,8 @@ class AlignmentComparison(Experiment):
         # some metaparameters for the experiment
         parser.add_argument('--epochs', type=int, default=100) # how many rounds of training to do
         parser.add_argument('--replicates', type=int, default=5) # how many copies of identical networks to train
-        
+        parser.add_argument('--use-flag', default=False, action='store_true', help='if used, will include flagged layers in analyses')
+
         # return parser
         return parser
     
@@ -140,7 +141,7 @@ class AlignmentComparison(Experiment):
         # compare learning rates
         if self.args.comparison == 'lr':
             lrs = [lr for lr in self.args.lrs for _ in range(self.args.replicates)]
-            nets = [model_constructor(dropout=self.args.default_dropout, **model_parameters) for _ in lrs]
+            nets = [model_constructor(dropout=self.args.default_dropout, **model_parameters, ignore_flag=not(self.args.use_flag)) for _ in lrs]
             nets = [net.to(self.device) for net in nets]
             optimizers = [optim(net.parameters(), lr=lr, weight_decay=self.args.default_wd)
                         for net, lr in zip(nets, lrs)]
@@ -154,7 +155,7 @@ class AlignmentComparison(Experiment):
         # compare training with input noise
         elif self.args.comparison == 'noise':
             noises = [nnorm for nnorm in self.args.noises for _ in range(self.args.replicates)]
-            nets = [model_constructor(dropout=self.args.default_dropout, **model_parameters) for _ in noises]
+            nets = [model_constructor(dropout=self.args.default_dropout, **model_parameters, ignore_flag=not(self.args.use_flag)) for _ in noises]
             nets = [net.to(self.device) for net in nets]
             optimizers = [optim(net.parameters(), lr=self.args.default_lr) for net in nets]
             prms = {
@@ -170,7 +171,7 @@ class AlignmentComparison(Experiment):
             weight_decay_values = [self.args.compare_wd * (reg == 'weight_decay') for reg in self.args.regularizers]
             dropouts = [do for do in dropout_values for _ in range(self.args.replicates)]
             weight_decays = [wd for wd in weight_decay_values for _ in range(self.args.replicates)]
-            nets = [model_constructor(dropout=do, **model_parameters) for do in dropouts]
+            nets = [model_constructor(dropout=do, **model_parameters, ignore_flag=not(self.args.use_flag)) for do in dropouts]
             nets = [net.to(self.device) for net in nets]
             optimizers = [optim(net.parameters(), lr=self.args.default_lr, weight_decay=wd)
                         for net, wd in zip(nets, weight_decays)]
@@ -445,7 +446,8 @@ class AlignmentComparison(Experiment):
     def plot_eigenfeatures(self, results, prms):
         """method for plotting results related to eigen-analysis"""
         beta, eigvals = results['beta'], results['eigvals']
-
+        beta = [torch.abs(b) for b in beta]
+        
         num_types = len(prms['vals'])
         labels = [f"{prms['name']}={val}" for val in prms['vals']]
         cmap = mpl.colormaps['tab10']
@@ -500,7 +502,7 @@ class AlignmentComparison(Experiment):
                 ax[0, layer].set_xlabel('Input Dimension')
                 ax[1, layer].set_xlabel('Sorted Input Dim')
                 ax[0, layer].set_ylabel('Relative Eigval / Beta')
-                ax[1, layer].set_ylabel('Relative Beta')
+                ax[1, layer].set_ylabel('Relative Beta (Sorted)')
                 ax[0, layer].set_title(f"Layer {layer}")
                 ax[1, layer].set_title(f"Layer {layer}")
 

@@ -9,7 +9,7 @@ from .experiment import Experiment
 from ..models.registry import get_model
 from ..datasets import get_dataset
 from .. import train
-from ..utils import compute_stats_by_type, transpose_list, named_transpose
+from ..utils import compute_stats_by_type, transpose_list, named_transpose, rms
 
 class AlignmentStatistics(Experiment):
     def get_basename(self):
@@ -41,7 +41,8 @@ class AlignmentStatistics(Experiment):
         # some metaparameters for the experiment
         parser.add_argument('--epochs', type=int, default=100) # how many rounds of training to do
         parser.add_argument('--replicates', type=int, default=5) # how many copies of identical networks to train
-        
+        parser.add_argument('--use-flag', default=False, action='store_true', help='if used, will include flagged layers in analyses')
+
         # return parser
         return parser
     
@@ -72,13 +73,17 @@ class AlignmentStatistics(Experiment):
 
         # measure eigenfeatures
         print('measuring eigenfeatures...')
-        beta, eigvals, eigvecs = [], [], []
+        beta, eigvals, eigvecs, class_betas = [], [], [], []
         for net in tqdm(nets):
             eigenfeatures = net.measure_eigenfeatures(dataset.test_loader, with_updates=False)
+            beta_by_class = net.measure_class_eigenfeatures(dataset.test_loader, eigenfeatures[2], rms=False, with_updates=False)
             beta.append(eigenfeatures[0])
             eigvals.append(eigenfeatures[1])
             eigvecs.append(eigenfeatures[2])
-        eigen_results = dict(beta=beta, eigvals=eigvals) # we don't actually use the eigvecs for anything right now, eigvecs=eigvecs)    
+            class_betas.append(beta_by_class)
+        
+        # we don't actually use the eigvecs for anything right now, eigvecs=eigvecs)    
+        eigen_results = dict(beta=beta, eigvals=eigvals, class_betas=class_betas, class_names=dataset.test_loader.dataset.classes) 
 
         # make full results dictionary
         results = dict(
@@ -121,7 +126,7 @@ class AlignmentStatistics(Experiment):
         else:
             raise ValueError(f"optimizer ({self.args.optimizer}) not recognized")
         
-        nets = [get_model(self.args.network, build=True, dataset=self.args.dataset, dropout=self.args.default_dropout)
+        nets = [get_model(self.args.network, build=True, dataset=self.args.dataset, dropout=self.args.default_dropout, ignore_flag=not(self.args.use_flag))
                 for _ in range(self.args.replicates)]
         nets = [net.to(self.device) for net in nets]
         optimizers = [optim(net.parameters(), lr=self.args.default_lr, weight_decay=self.args.default_wd)
@@ -162,7 +167,7 @@ class AlignmentStatistics(Experiment):
 
         num_train_epochs = train_results['loss'].size(0)
         num_types = 1
-        labels = [f"fill me in!!!"]
+        labels = [f"{self.args.network}"]
 
         print("getting statistics on run data...")
         alignment = torch.stack([torch.mean(align, dim=2) for align in train_results['alignment']])
@@ -289,7 +294,7 @@ class AlignmentStatistics(Experiment):
 
     def plot_dropout_results(self, dropout_results, dropout_parameters):
         num_types = 1
-        labels = [f"fill me in!!!!!?!?!"]
+        labels = [f"{self.args.network}"]
         cmap = mpl.colormaps['Set1']
         alpha = 0.3
         msize = 10
@@ -348,7 +353,7 @@ class AlignmentStatistics(Experiment):
                 if idx==0:
                     ax[layer, idx].set_ylabel('Loss w/ Dropout')
 
-                if idx==num_exp-1:
+                if iexp==num_exp-1:
                     ax[layer, idx].legend(loc='best')
         
         self.plot_ready('prog_dropout_'+extra_name+'_loss')
@@ -377,7 +382,7 @@ class AlignmentStatistics(Experiment):
                 if idx==0:
                     ax[layer, idx].set_ylabel('Accuracy w/ Dropout')
 
-                if idx==num_exp-1:
+                if iexp==num_exp-1:
                     ax[layer, idx].legend(loc='best')
         
         self.plot_ready('prog_dropout_'+extra_name+'_accuracy')
@@ -385,21 +390,27 @@ class AlignmentStatistics(Experiment):
 
     def plot_eigenfeatures(self, results):
         """method for plotting results related to eigen-analysis"""
-        beta, eigvals = results['beta'], results['eigvals']
+        beta, eigvals, class_betas, class_names = results['beta'], results['eigvals'], results['class_betas'], results['class_names']
+        beta = [[torch.abs(b) for b in net_beta] for net_beta in beta]
+        class_betas = [[rms(cb, dim=2) for cb in net_class_beta] for net_class_beta in class_betas]
 
         num_types = 1
-        labels = [f"fill me in :("]
+        labels = [f"{self.args.network}"]
         cmap = mpl.colormaps['tab10']
+        class_cmap = mpl.colormaps['viridis'].resampled(len(class_names))
 
         print("measuring statistics of eigenfeature analyses...")
 
         # shape wrangling
         beta = [torch.stack(b) for b in transpose_list(beta)]
         eigvals = [torch.stack(ev) for ev in transpose_list(eigvals)]
+        class_betas = [torch.stack(cb) for cb in transpose_list(class_betas)]
 
         # normalize to relative values
         beta = [b / b.sum(dim=2, keepdim=True) for b in beta]
         eigvals = [ev / ev.sum(dim=1, keepdim=True) for ev in eigvals]
+        class_betas = [cb / cb.sum(dim=2, keepdim=True) for cb in class_betas]
+
 
         # reuse these a few times
         statprms = lambda method: dict(num_types=num_types, dim=0, method=method)
@@ -413,6 +424,7 @@ class AlignmentStatistics(Experiment):
         # get mean / se beta for each layer for each network type
         mean_beta, se_beta = named_transpose([compute_stats_by_type(b, **statprms('var')) for b in beta])
         mean_sorted, se_sorted = named_transpose([compute_stats_by_type(b, **statprms('var')) for b in sorted_beta])
+        mean_class_beta, se_class_beta = named_transpose([compute_stats_by_type(cb, **statprms('var')) for cb in class_betas])
 
         print("plotting eigenfeature results...")
         figdim = 3
@@ -441,7 +453,7 @@ class AlignmentStatistics(Experiment):
                 ax[0, layer].set_xlabel('Input Dimension')
                 ax[1, layer].set_xlabel('Sorted Input Dim')
                 ax[0, layer].set_ylabel('Relative Eigval / Beta')
-                ax[1, layer].set_ylabel('Relative Beta')
+                ax[1, layer].set_ylabel('Relative Beta (Sorted)')
                 ax[0, layer].set_title(f"Layer {layer}")
                 ax[1, layer].set_title(f"Layer {layer}")
 
@@ -478,3 +490,41 @@ class AlignmentStatistics(Experiment):
                     ax[layer].legend(loc='best')
 
         self.plot_ready('eigenfeatures_loglog')
+
+
+        fig, ax = plt.subplots(2, num_layers, figsize=(num_layers*figdim, figdim*2), layout='constrained')
+        for layer in range(num_layers):
+            num_input = mean_evals[layer].size(1)
+            for idx, label in enumerate(labels):
+                mn_ev = mean_evals[layer][idx]
+                se_ev = var_evals[layer][idx]
+                # plot eigenvalues of each eigenvector
+                ax[0, layer].plot(range(num_input), mn_ev, color=cmap(idx), linestyle='--', label='eigvals' if idx==0 else None)
+                ax[1, layer].plot(range(num_input), mn_ev, color=cmap(idx), linestyle='--', label='eigvals' if idx==0 else None)
+
+                for idx_class, class_name in enumerate(class_names):
+                    mn_data = mean_class_beta[layer][idx][idx_class]
+                    se_data = se_class_beta[layer][idx][idx_class]
+                    ax[0, layer].plot(range(num_input), mn_data, color=class_cmap(idx_class), label=class_name)
+                    ax[0, layer].fill_between(range(num_input), mn_data+se_data, mn_data-se_data, color=(class_cmap(idx_class), alpha))
+                    ax[1, layer].plot(range(num_input), mn_data, color=class_cmap(idx_class), label=class_name)
+                    ax[1, layer].fill_between(range(num_input), mn_data+se_data, mn_data-se_data, color=(class_cmap(idx_class), alpha))
+                
+                ax[0, layer].set_xscale('log')
+                ax[1, layer].set_xscale('log')
+                ax[1, layer].set_yscale('log')
+                ax[0, layer].set_xlabel('Input Dimension')
+                ax[1, layer].set_xlabel('Sorted Input Dim')
+                ax[0, layer].set_ylabel('Relative Eigval / Class Loading (RMS)')
+                ax[1, layer].set_ylabel('Relative Class Loading (RMS)')
+                ax[0, layer].set_title(f"Layer {layer}")
+                ax[1, layer].set_title(f"Layer {layer}")
+
+                if layer==num_layers-1:
+                    ax[0, layer].legend(loc='best', fontsize=8)
+                    ax[1, layer].legend(loc='best', fontsize=8)
+
+        self.plot_ready('class_eigenfeatures')
+
+
+        
