@@ -347,12 +347,23 @@ class AlignmentNetwork(nn.Module, ABC):
         assert len(idxs)==len(layers), "idxs and layers need to be iterables with the same length"
         assert len(layers)==len(set(layers)), "layers must not have any repeated elements"
         
+        device = get_device(x)
+
         hidden_inputs = []
         for idx_layer, (layer, metaprms) in enumerate(zip(self.layers, self.metaparameters)):
             if idx_layer in layers:
-                dropout_idx = idxs[{val:idx for idx, val in enumerate(layers)}[idx_layer]]
-                fraction_dropout = len(dropout_idx) / x.shape[1]
-                raise ValueError("need some linear algebra for projecting out the activity of one of the eigenvectors")
+                idx_to_layer = {val:idx for idx, val in enumerate(layers)}[idx_layer]
+                dropout_idx = idxs[idx_to_layer]
+                dropout_evec = eigenvectors[idx_to_layer].to(device)
+
+                print("don't dropout by setting values to 0!")
+                dropout_evec[:, dropout_idx] = 0
+                # remove dropout eigenvectors by projecting and inverting 
+                x = torch.matmul(torch.matmul(x, dropout_evec), dropout_evec.T)
+                # -- I think having a kwarg where you can either maintain the norm of the input or not is gonna work just fine --
+                # -- We can also use an eigenvalue based model where we correct the norm by the relative variance of dropped layers --
+                # -- ^^ on average I suppose it'll be the same..., but in practice the deviation will depend on each minibatch ^^ --
+            
             if self._include_layer(metaprms):
                 hidden_inputs.append(x)
             x = layer(x) # pass through next layer after potentially dropping out certain dimensions of input
@@ -362,7 +373,7 @@ class AlignmentNetwork(nn.Module, ABC):
     
     
     @torch.no_grad()
-    def measure_eigenfeatures(self, dataloader, DEVICE=None, with_updates=True, full_conv=False):
+    def measure_eigenfeatures(self, dataloader, DEVICE=None, with_updates=True, centered=True, full_conv=False):
         """
         measure the eigenvalues and eigenvectors of the input to each layer
         and also measure how much each weight array uses each eigenvector
@@ -372,6 +383,10 @@ class AlignmentNetwork(nn.Module, ABC):
         a good idea to do it sometimes -- I think sklearn's IncrementalPCA 
         algorithm is best for this. But it still takes a while so shouldn't be
         done frequently, only after training for important networks. 
+
+        if centered=True, will measure eigenfeatures of true covariance matrix. 
+        if centered=False, will measure eigenfeatures of uncentered X.T @ X where
+        x is the input to each alignment layer. 
 
         **full_conv** is used to determine whether to unfold convolutional layers
         -- if full_conv=True, will unfold and measure eigenfeatures that way
@@ -449,7 +464,7 @@ class AlignmentNetwork(nn.Module, ABC):
                 bvar = torch.mean(torch.var(input, dim=0), dim=0) 
 
                 # measuring across each stride independently (for conv layers)
-                bcov = batch_cov(input.permute((2, 1, 0)))
+                bcov = batch_cov(input.permute((2, 1, 0)), centered=centered)
                 brank = [torch.linalg.matrix_rank(bc) for bc in bcov]
                 
                 # eigh will fail if condition number is too high (which can happend
@@ -490,7 +505,11 @@ class AlignmentNetwork(nn.Module, ABC):
 
             else:
                 # measuring with unfolded data (independent of layer type)
-                ccov = torch.cov(input.T) # get covariance of input
+                if centered:
+                    ccov = torch.cov(input.T) # get covariance of input
+                else:
+                    # get "covariance" without centering...
+                    ccov = (input.T @ input) /  (input.size(0) - 1)
                 crank = torch.linalg.matrix_rank(ccov) # measure rank of covariance
                 w, v = torch.linalg.eigh(ccov) # measure eigenvalues and vectors
                 w_idx = torch.argsort(-w) # sort by eigenvalue highest to lowest
