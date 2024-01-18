@@ -1,5 +1,6 @@
 from typing import List
 from contextlib import contextmanager
+from functools import wraps
 import numpy as np
 import torch
 from matplotlib import pyplot as plt
@@ -19,6 +20,69 @@ def align_by_layer(full, layer):
 # ------------------------
 
 
+# -------------- context managers & decorators --------------
+@contextmanager
+def no_grad(no_grad=True):
+    if no_grad:
+        with torch.no_grad():
+            yield
+    else:
+        yield
+
+def test_nets(func):
+    @wraps(func)
+    def wrapper(nets, *args, **kwargs):
+        # figure out which networks are in training mode
+        in_training_mode = [net.training for net in nets]
+        # put networks in evaluation mode
+        for net in nets:
+            net.eval()
+
+        # do decorated function
+        func_outputs = func(nets, *args, **kwargs)
+
+        # return networks to whatever mode they used to be in 
+        for train_mode, net in zip(in_training_mode, nets):
+            if train_mode:
+                net.train()
+        return func_outputs
+    
+    # return decorated function
+    return wrapper
+
+def train_nets(func):
+    @wraps(func)
+    def wrapper(nets, *args, **kwargs):
+        # figure out which networks are in training mode
+        in_training_mode = [net.training for net in nets]
+        # put networks in training mode
+        for net in nets:
+            net.train()
+
+        # do decorated function
+        func_outputs = func(nets, *args, **kwargs)
+
+        # return networks to whatever mode they used to be in 
+        for train_mode, net in zip(in_training_mode, nets):
+            if not train_mode:
+                net.eval()
+        return func_outputs
+    
+    # return decorated function
+    return wrapper
+
+
+
+# ---- decorators for tracker class methods ----
+def handle_keep_planes(func):
+    """decorator to handle the keep_planes argument in a standard way for the tracker class"""
+    @wraps(func)
+    def wrapper(tracker_instance, *args, keep_planes=None, **kwargs):
+        keep_planes = tracker_instance.get_keep_planes(keep_planes=keep_planes)
+        return func(tracker_instance, *args, keep_planes=keep_planes, **kwargs)
+    return wrapper
+
+
 def get_device(obj):
     """simple method to get device of input tensor or nn.Module"""
     if isinstance(obj, torch.nn.Module):
@@ -36,14 +100,13 @@ def check_iterable(val):
         return False
     else:
         return True
-    
-@contextmanager
-def no_grad(no_grad=True):
-    if no_grad:
-        with torch.no_grad():
-            yield
-    else:
-        yield
+
+def remove_by_idx(input, idx, dim):
+    """
+    remove part of input indexed by idx on dim
+    """
+    idx_keep = [i for i in range(input.size(dim)) if i not in idx]
+    return torch.index_select(input, dim, torch.tensor(idx_keep).to(input.device))
 
 def smartcorr(input):
     """
