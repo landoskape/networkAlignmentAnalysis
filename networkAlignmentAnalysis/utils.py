@@ -280,13 +280,19 @@ def named_transpose(list_of_lists):
     """
     return map(list, zip(*list_of_lists))
 
-def _ptp(tensor, dim=None, keepdim=False):
+def ptp(tensor, dim=None, keepdim=False):
     """
     simple method for measuring range of tensor on requested dimension or on all data
     """
     if dim is None:
         return tensor.max() - tensor.min()
     return tensor.max(dim, keepdim).values - tensor.min(dim, keepdim).values
+
+def rms(tensor, dim=None, keepdim=False):
+    """simple method for measuring root-mean-square on requested dimension or on all data in tensor"""
+    if dim is None:
+        return torch.sqrt(torch.mean(tensor**2))
+    return torch.sqrt(torch.mean(tensor**2, dim=dim, keepdim=keepdim))
 
 def compute_stats_by_type(tensor, num_types, dim, method='var'):
     """
@@ -312,7 +318,7 @@ def compute_stats_by_type(tensor, num_types, dim, method='var'):
     elif method=='se':
         type_dev = torch.std(tensor_by_type, dim=dim+1) / np.sqrt(num_per_type)
     elif method=='range':
-        type_dev = _ptp(tensor_by_type, dim=dim+1)
+        type_dev = ptp(tensor_by_type, dim=dim+1)
     else:
         raise ValueError(f"Method ({method}) not recognized.")
 
