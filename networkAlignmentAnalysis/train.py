@@ -1,4 +1,5 @@
 import time
+from copy import copy
 from tqdm import tqdm
 import torch
 from networkAlignmentAnalysis.utils import transpose_list, condense_values, value_by_layer
@@ -186,6 +187,17 @@ def progressive_dropout(nets, dataset, alignment=None, **parameters):
     takes as input a list of networks (usually trained) and a dataset, along with some
     experiment parameters (although there are defaults coded into the method)
 
+    note that this only works when each network in the list has the same architecture!
+    to analyze a group of networks with different architectures, run this function multiple
+    times and concatenate the results.
+
+    alignment, when provided is a list of the alignment measurement for each layer of 
+    each network. It is expected that each alignment list has the structure:
+    len(alignment)=num_alignment_layers
+    alignment[i].shape = (num_networks, num_batches, num_dimensions_per_layer)
+    : see how the outputs of ``measure_alignment`` is handled in the ``train`` and ``test`` 
+    functions of this module to understand how to structure it in that format. 
+
     will measure the loss and accuracy on the dataset using targeted dropout, where
     the method will progressively dropout more and more nodes based on the highest, lowest,
     or random alignment. Can either do it for each layer separately or all togehter using
@@ -195,19 +207,29 @@ def progressive_dropout(nets, dataset, alignment=None, **parameters):
     # input argument check
     if not(isinstance(nets, list)): nets = [nets]
 
-    # number layers that dropout can be performed in
-    num_dropout_layers = nets[0].num_layers() - 1 # (never dropout classification layer)
-
+    # get index to each alignment layer
+    idx_dropout_layers = nets[0].get_alignment_layer_indices() 
+    
     # put networks in evaluation mode
     in_training_mode = [net.training for net in nets]
     for net in nets:
         net.eval()
 
-    # get alignment and index of alignment
+    # get alignment of networks if not provided
     if alignment is None:
         alignment = test(nets, dataset, **parameters)['alignment']
     
-    alignment = [torch.mean(align, dim=1) for align in alignment[:num_dropout_layers]]
+    # check if alignment has the right length (ie number of layers) (otherwise can't make assumptions about where the classification layer is)
+    assert len(alignment)==len(idx_dropout_layers), "the number of layers in **alignment** doesn't correspond to the number of alignment layers"
+
+    # don't dropout classification layer if included as an alignment layer
+    classification_layer = nets[0].num_layers(all=True)-1 # index to last layer in network
+    if classification_layer in idx_dropout_layers:
+        idx_dropout_layers.pop(-1)
+        alignment.pop(-1)    
+
+    # get average alignment (across batches) and index of average alignment by node
+    alignment = [torch.mean(align, dim=1) for align in alignment]
     idx_alignment = [torch.argsort(align, dim=1) for align in alignment]
     
     # preallocate variables and define metaparameters
@@ -215,7 +237,7 @@ def progressive_dropout(nets, dataset, alignment=None, **parameters):
     num_drops = parameters.get('num_drops', 9)
     drop_fraction = torch.linspace(0,1,num_drops+2)[1:-1]
     by_layer = parameters.get('by_layer', False)
-    num_layers = num_dropout_layers if by_layer else 1
+    num_layers = len(idx_dropout_layers) if by_layer else 1
 
     # preallocate tracker tensors
     progdrop_loss_high = torch.zeros((num_nets, num_drops, num_layers))
@@ -245,10 +267,10 @@ def progressive_dropout(nets, dataset, alignment=None, **parameters):
             for layer in range(num_layers):
                 if by_layer:
                     drop_high, drop_low, drop_rand = [idx_high[layer]], [idx_low[layer]], [idx_rand[layer]]
-                    drop_layer = [layer]
+                    drop_layer = [idx_dropout_layers[layer]]
                 else:
                     drop_high, drop_low, drop_rand = idx_high, idx_low, idx_rand
-                    drop_layer = [layer for layer in range(num_dropout_layers)]
+                    drop_layer = copy(idx_dropout_layers)
                 
                 # get output with targeted dropout
                 out_high = [net.forward_targeted_dropout(images, [drop[idx, :] for drop in drop_high], drop_layer)[0]
@@ -286,6 +308,7 @@ def progressive_dropout(nets, dataset, alignment=None, **parameters):
         'progdrop_acc_rand': progdrop_acc_rand / num_batches,
         'dropout_fraction': drop_fraction,
         'by_layer': by_layer,
+        'idx_dropout_layers': idx_dropout_layers,
     }
 
     # return networks to whatever mode they used to be in 
