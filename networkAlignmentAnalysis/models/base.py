@@ -299,9 +299,9 @@ class AlignmentNetwork(nn.Module, ABC):
         return correlation
 
     @torch.no_grad()
-    def forward_targeted_dropout(self, x, idxs=None, layers=None):
+    def forward_targeted_dropout(self, x, idxs, layers):
         """
-        perform forward pass with targeted dropout of hidden channels
+        perform forward pass with targeted dropout on output of hidden layers
 
         **idxs** and **layers** are matched length tuples describing the layer to dropout
         in and the idxs in that layer to dropout. The dropout happens in the activations 
@@ -315,7 +315,7 @@ class AlignmentNetwork(nn.Module, ABC):
         assert len(layers)==len(set(layers)), "layers must not have any repeated elements"
         assert all([layer>=0 and layer<len(self.layers)-1 for layer in layers]), "dropout only works on first N-1 layers"
         
-        activations = []
+        hidden_outputs = []
         for idx_layer, (layer, metaprms) in enumerate(zip(self.layers, self.metaparameters)):
             x = layer(x) # pass through next layer
             if idx_layer in layers:
@@ -324,40 +324,42 @@ class AlignmentNetwork(nn.Module, ABC):
                 x[:, dropout_idx] = 0
                 x = x * (1 - fraction_dropout)
             if self._include_layer(metaprms):
-                activations.append(x) 
+                hidden_outputs.append(x) 
             
-        return x, activations
+        # return output of network and outputs of each alignment layer
+        return x, hidden_outputs
     
+
     @torch.no_grad()
     def forward_eigenvector_dropout(self, x, eigenvectors, idxs, layers):
         """
-        perform forward pass with targeted dropout of activity on eigenvectors 
+        perform forward pass with targeted dropout of loadings on eigenvectors on input to hidden layers
 
-        **eigenvectors**, **idxs** and **layers** are matched length tuples describing the
-        layer to dropout in, the eigenvectors of input to that layer, and the idxs of which
-        eigenvectors in that layer to dropout. The dropout happens after the layer (so 
-        layer=(0) will correspond to the output of the first layer.
-
+        **eigenvectors**, **idxs** and **layers** are matched length tuples describing: 
+        eigenvectors: the eigenvectors of activity corresponding to the input to each layer
+        idxs: which eigenvectors to dropout from the activity as it propagates through the network
+        layers: which layers to do dropouts in
+        
         returns the output accounting for targeted dropout and also the full list of hidden
         activations after targeted dropout
         """
         assert check_iterable(idxs) and check_iterable(layers), "idxs and layers need to be iterables with the same length"
         assert len(idxs)==len(layers), "idxs and layers need to be iterables with the same length"
         assert len(layers)==len(set(layers)), "layers must not have any repeated elements"
-        assert all([layer>=0 and layer<len(self.layers)-1 for layer in layers]), "dropout only works on first N-1 layers"
         
-        activations = []
+        hidden_inputs = []
         for idx_layer, (layer, metaprms) in enumerate(zip(self.layers, self.metaparameters)):
-            x = layer(x) # pass through next layer
             if idx_layer in layers:
                 dropout_idx = idxs[{val:idx for idx, val in enumerate(layers)}[idx_layer]]
                 fraction_dropout = len(dropout_idx) / x.shape[1]
-                x[:, dropout_idx] = 0
-                x = x * (1 - fraction_dropout)
+                raise ValueError("need some linear algebra for projecting out the activity of one of the eigenvectors")
             if self._include_layer(metaprms):
-                activations.append(x) 
-            
-        return x, activations
+                hidden_inputs.append(x)
+            x = layer(x) # pass through next layer after potentially dropping out certain dimensions of input
+
+        # return output of network and inputs to each alignment layer
+        return x, hidden_inputs
+    
     
     @torch.no_grad()
     def measure_eigenfeatures(self, dataloader, DEVICE=None, with_updates=True, full_conv=False):
