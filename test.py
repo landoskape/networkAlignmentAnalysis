@@ -25,11 +25,11 @@ if __name__ == '__main__':
     net = get_model(args.network, build=True).to(DEVICE)
     dataset = get_dataset(args.dataset, build=True, transform_parameters=net)
 
+    optim = torch.optim.Adam(net.parameters(), lr=1e-2)
+
+    results = train.train([net], [optim], dataset, train_set=True, num_epochs=100)
+
     betas, eigenvalues, eigenvectors = net.measure_eigenfeatures(dataset.test_loader)
 
-    beta_by_class = net.measure_class_eigenfeatures(dataset.test_loader, eigenvectors)
-    print('no rms:', [b.shape for b in beta_by_class])
+    dropout_results = train.eigenvector_dropout([net], dataset, [eigenvectors], train_set=False)
 
-    beta_by_class = net.measure_class_eigenfeatures(dataset.test_loader, eigenvectors, rms=True)
-    print('rms=True:', [b.shape for b in beta_by_class])
-    
