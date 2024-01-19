@@ -25,8 +25,8 @@ def train(nets, optimizers, dataset, **parameters):
     # --- optional analyses ---
     measure_alignment = parameters.get('alignment', True)
     measure_delta_weights = parameters.get('delta_weights', False)
-    measure_avgcorr = parameters.get('average_correlation', True)
-    measure_fullcorr = parameters.get('full_correlation', False)
+    # measure_avgcorr = parameters.get('average_correlation', True)
+    # measure_fullcorr = parameters.get('full_correlation', False)
 
     # measure alignment throughout training
     if measure_alignment: 
@@ -37,13 +37,13 @@ def train(nets, optimizers, dataset, **parameters):
         delta_weights = []
         init_weights = [net.get_alignment_weights() for net in nets]
 
-    # measure average correlation for each layer
-    if measure_avgcorr: 
-        avgcorr = []
+    # # measure average correlation for each layer
+    # if measure_avgcorr: 
+    #     avgcorr = []
 
-    # measure full correlation for each layer
-    if measure_fullcorr: 
-        fullcorr = []
+    # # measure full correlation for each layer
+    # if measure_fullcorr: 
+    #     fullcorr = []
 
     # --- training loop ---
     for epoch in tqdm(range(parameters['num_epochs']), desc="training epoch"):
@@ -79,11 +79,11 @@ def train(nets, optimizers, dataset, **parameters):
                 
             # note: the double use of measure_correlation is inefficient and could probably 
             # be precomputed once then operated on and appended differently for each term
-            if measure_avgcorr:
-                avgcorr.append([net.measure_correlation(images, precomputed=True, reduced=True) for net in nets])
+            #if measure_avgcorr:
+            #    avgcorr.append([net.measure_correlation(images, precomputed=True, reduced=True) for net in nets])
             
-            if measure_fullcorr:
-                fullcorr.append([net.measure_correlation(images, precomputed=True, reduced=False) for net in nets])
+            #if measure_fullcorr:
+            #    fullcorr.append([net.measure_correlation(images, precomputed=True, reduced=False) for net in nets])
     
     # create results dictionary
     results = {
@@ -96,10 +96,10 @@ def train(nets, optimizers, dataset, **parameters):
         results['alignment'] = condense_values(transpose_list(alignment))
     if measure_delta_weights:
         results['delta_weights'] = condense_values(transpose_list(delta_weights))
-    if measure_avgcorr:
-        results['avgcorr'] = condense_values(transpose_list(avgcorr))
-    if measure_fullcorr:
-        results['fullcorr'] = condense_values(transpose_list(fullcorr))
+    # if measure_avgcorr:
+    #     results['avgcorr'] = condense_values(transpose_list(avgcorr))
+    # if measure_fullcorr:
+    #     results['fullcorr'] = condense_values(transpose_list(fullcorr))
 
     return results
 
