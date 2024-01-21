@@ -22,12 +22,15 @@ if __name__ == '__main__':
     print('using device: ', DEVICE)
 
     # get network
-    net = get_model(args.network, build=True).to(DEVICE)
+    net_args = dict(
+        ignore_flag=False
+    )
+    net = get_model(args.network, build=True, **net_args).to(DEVICE)
     dataset = get_dataset(args.dataset, build=True, transform_parameters=net)
 
     optim = torch.optim.Adam(net.parameters(), lr=1e-2)
 
-    results = train.train([net], [optim], dataset, train_set=True, num_epochs=100)
+    results = train.train([net], [optim], dataset, train_set=True, num_epochs=1)
 
     betas, eigenvalues, eigenvectors = net.measure_eigenfeatures(dataset.test_loader)
 
