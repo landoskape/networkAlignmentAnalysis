@@ -5,9 +5,9 @@ from matplotlib import pyplot as plt
 from tqdm import tqdm
 
 from .. import train
-from ..utils import compute_stats_by_type, transpose_list, named_transpose, rms
 from ..datasets import get_dataset
 from ..models.registry import get_model
+from ..utils import compute_stats_by_type, named_transpose, rms, transpose_list
 from .experiment import Experiment
 
 
@@ -145,7 +145,7 @@ class AlignmentStatistics(Experiment):
             num_epochs=self.args.epochs,
             alignment=True,
             delta_weights=True,
-            average_correlation=self.args.avg_corr,
+            average_correlation=True,
             full_correlation=False,
         )
 

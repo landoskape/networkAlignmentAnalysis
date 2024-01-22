@@ -1,7 +1,10 @@
 from torch import nn
-from .base import AlignmentNetwork
-from .layers import default_metaprms_conv2d, default_metaprms_ignore, default_metaprms_linear
 from torchvision.models import alexnet as torch_alexnet
+
+from .base import AlignmentNetwork
+from .layers import (default_metaprms_conv2d, default_metaprms_ignore,
+                     default_metaprms_linear)
+
 
 class MLP(AlignmentNetwork):
     """
@@ -44,6 +47,9 @@ class MLP(AlignmentNetwork):
             'CIFAR100': {
                 'flatten': True,
                 'resize': None,
+            },
+            'ImageNet': {
+                'flatten': True,
             },
         }
         if dataset not in params: 
@@ -103,6 +109,9 @@ class CNN2P2(AlignmentNetwork):
                 'flatten': False,
                 'resize': None,
             },
+            'ImageNet': {
+                'flatten': False,
+            }
         }
         if dataset not in params: 
             raise ValueError(f"Dataset ({dataset}) is not in params dictionary: {[k for k in params]}")
@@ -206,6 +215,10 @@ class AlexNet(AlignmentNetwork):
                 'flatten': False,
                 'resize': (224, 224),
             },
+            'ImageNet': {
+                'flatten': False,
+                'resize': (256, 256),
+            }
         }
         if dataset not in params: 
             raise ValueError(f"Dataset ({dataset}) is not in params dictionary: {[k for k in params]}")

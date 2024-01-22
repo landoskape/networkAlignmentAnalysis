@@ -16,11 +16,13 @@ DATASET_ARGUMENTS = {
         'MNIST': dict(in_channels=1, output_dim=10),
         'CIFAR10': dict(in_channels=3, output_dim=10),
         'CIFAR100': dict(in_channels=3, output_dim=100),
+        'ImageNet': dict(in_channels=3, output_dim=1000),
     },
     'AlexNet': {
         'MNIST': dict(num_classes=10),
         'CIFAR10': dict(num_classes=10),
         'CIFAR100': dict(num_classes=100),
+        'ImageNet': dict(num_classes=1000),
     },
 }
 
