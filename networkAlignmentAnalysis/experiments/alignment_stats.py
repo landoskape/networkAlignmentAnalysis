@@ -1,15 +1,15 @@
-import numpy as np
-from tqdm import tqdm
-import torch
-
-from matplotlib import pyplot as plt
 import matplotlib as mpl
+import numpy as np
+import torch
+from matplotlib import pyplot as plt
+from tqdm import tqdm
 
-from .experiment import Experiment
-from ..models.registry import get_model
-from ..datasets import get_dataset
 from .. import train
 from ..utils import compute_stats_by_type, transpose_list, named_transpose, rms
+from ..datasets import get_dataset
+from ..models.registry import get_model
+from .experiment import Experiment
+
 
 class AlignmentStatistics(Experiment):
     def get_basename(self):
@@ -27,6 +27,8 @@ class AlignmentStatistics(Experiment):
         parser.add_argument('--network', type=str, default='MLP') # what base network architecture to use
         parser.add_argument('--dataset', type=str, default='MNIST') # what dataset to use
         parser.add_argument('--optimizer', type=str, default='Adam') # what optimizer to train with
+        parser.add_argument('--batch_size', type=int, default=1024) # batch size to pass to DataLoader
+
 
         # default parameters
         parser.add_argument('--default-lr', type=float, default=1e-3) # default learning rate
@@ -143,9 +145,12 @@ class AlignmentStatistics(Experiment):
             num_epochs=self.args.epochs,
             alignment=True,
             delta_weights=True,
-            average_correlation=True, 
+            average_correlation=self.args.avg_corr,
             full_correlation=False,
         )
+
+        # if self.args.network == 'AlexNet':
+        #     parameters['average_correlation'] = False
 
         print('training networks...')
         train_results = train.train(nets, optimizers, dataset, **parameters)
