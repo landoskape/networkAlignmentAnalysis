@@ -168,6 +168,10 @@ class Experiment(ABC):
     def get_network_path(self, name):
         """Method for loading path to saved network file"""
         return self.get_dir() / f"{name}.pt"
+    
+    def get_checkpoint_path(self):
+        '''Method for loading path to network checkpoint file'''
+        return self.get_dir() / 'checkpoint.tar'
 
     def _update_args(self, prms):
         """Method for updating arguments from saved parameter dictionary"""
@@ -220,7 +224,44 @@ class Experiment(ABC):
         for idx, net in enumerate(nets):
             cname = name + f"{idx}"
             save(net, self.get_network_path(cname))
-    
+
+    def save_checkpoints(self, nets, optimizers, results):
+        """
+        Method for saving checkpoints for networks throughout training.
+        """
+        multi_model_ckpt = {f'model_state_dict_{i}': net.state_dict()
+                            for i, net in enumerate(nets)}
+        multi_optimizer_ckpt = {f'optimizer_state_dict_{i}': opt.state_dict()
+                                for i, opt in enumerate(optimizers)}
+        checkpoint = results | multi_model_ckpt | multi_optimizer_ckpt
+        save(checkpoint, self.get_checkpoint_path())
+
+    def load_checkpoints(self, nets, optimizers, device):
+        """
+        Method for loading presaved checkpoint during training.
+        TODO: device handling for passing between gpu/cpu
+        """
+        checkpoint = load(self.get_checkpoint_path())
+        net_ids = sorted([key for key in checkpoint if key.startswith('model_state_dict')])
+        opt_ids = sorted([key for key in checkpoint if key.startswith('optimizer_state_dict')])
+        assert all([oi.split('_')[-1] == ni.split('_')[-1] for oi, ni in zip(opt_ids, net_ids)]), (
+            'nets and optimizers cannot be matched up from checkpoint'
+        )
+
+        # orig_device = checkpoint['device']
+        orig_device = 'cpu'
+        if (orig_device == 'cuda') & (device == 'cpu'):
+            [net.load_state_dict(checkpoint.pop(net_id), map_location=device)
+             for net, net_id in zip(nets, net_ids)]
+        elif device == 'cuda':
+            [net.load_state_dict(checkpoint.pop(net_id))
+             for net, net_id in zip(nets, net_ids)]
+            [net.to(device) for net in nets]
+        [opt.load_state_dict(checkpoint.pop(opt_id))
+         for opt, opt_id in zip(optimizers, opt_ids)]
+
+        return nets, optimizers, checkpoint
+
     @abstractmethod
     def main(self) -> Tuple[Dict, List[TorchModule]]:
         """
