@@ -28,11 +28,13 @@ if __name__ == '__main__':
     net = get_model(args.network, build=True, **net_args).to(DEVICE)
     dataset = get_dataset(args.dataset, build=True, transform_parameters=net)
 
-    optim = torch.optim.Adam(net.parameters(), lr=1e-2)
+    # optim = torch.optim.Adam(net.parameters(), lr=1e-2)
 
-    results = train.train([net], [optim], dataset, train_set=True, num_epochs=1)
+    # results = train.train([net], [optim], dataset, train_set=True, num_epochs=1)
 
-    betas, eigenvalues, eigenvectors = net.measure_eigenfeatures(dataset.test_loader)
+    betas, eigenvalues, eigenvectors = net.measure_eigenfeatures(dataset.test_loader, by_stride=False)
+
+    # out = net.measure_class_eigenfeatures(dataset.test_loader, eigenvectors, rms=False, with_updates=True)
 
     dropout_results = train.eigenvector_dropout([net], dataset, [eigenvectors], train_set=False)
 
