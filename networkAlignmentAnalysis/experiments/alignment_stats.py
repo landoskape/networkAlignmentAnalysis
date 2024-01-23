@@ -1,3 +1,5 @@
+import os
+
 import matplotlib as mpl
 import numpy as np
 import torch
@@ -44,6 +46,11 @@ class AlignmentStatistics(Experiment):
         parser.add_argument('--epochs', type=int, default=100) # how many rounds of training to do
         parser.add_argument('--replicates', type=int, default=5) # how many copies of identical networks to train
         parser.add_argument('--use-flag', default=False, action='store_true', help='if used, will include flagged layers in analyses')
+
+
+        # checkpointing parameters
+        parser.add_argument('--use_prev', default=False, action='store_true', help='if used, will pick up training off previous checkpoint')
+        parser.add_argument('--save_ckpts', default=False, action='store_true', help='if used, will save checkpoints of models')
 
         # return parser
         return parser
@@ -149,8 +156,14 @@ class AlignmentStatistics(Experiment):
             full_correlation=False,
         )
 
-        # if self.args.network == 'AlexNet':
-        #     parameters['average_correlation'] = False
+        if self.args.use_prev & os.path.isfile(self.get_checkpoint_path()):
+            nets, optimizers, results = self.load_checkpoints(nets, optimizers, self.args.device)
+            [net.train() for net in nets]
+            parameters['num_complete'] = results['epoch'] + 1
+            parameters['results'] = results
+
+        if self.args.save_ckpts:
+            parameters['save_checkpoints'] = (True, 1, self.get_checkpoint_path(), self.args.device)
 
         print('training networks...')
         train_results = train.train(nets, optimizers, dataset, **parameters)

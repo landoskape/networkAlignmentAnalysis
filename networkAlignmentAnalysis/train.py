@@ -1,7 +1,10 @@
 import time
-from tqdm import tqdm
+
 import torch
-from networkAlignmentAnalysis.utils import transpose_list, condense_values, value_by_layer
+from tqdm import tqdm
+
+from networkAlignmentAnalysis.utils import (condense_values, transpose_list,
+                                            value_by_layer)
 
 
 def train(nets, optimizers, dataset, **parameters):
@@ -17,40 +20,50 @@ def train(nets, optimizers, dataset, **parameters):
     use_train = parameters.get('train_set', True)
     dataloader = dataset.train_loader if use_train else dataset.test_loader
     num_steps = len(dataset.train_loader)*parameters['num_epochs']
-    track_loss = torch.zeros((num_steps, num_nets))
-    track_accuracy = torch.zeros((num_steps, num_nets))
-    
+    # track_loss = torch.zeros((num_steps, num_nets))
+    # track_accuracy = torch.zeros((num_steps, num_nets))
+
     # --- optional analyses ---
     measure_alignment = parameters.get('alignment', True)
     measure_delta_weights = parameters.get('delta_weights', False)
     measure_avgcorr = parameters.get('average_correlation', True)
     measure_fullcorr = parameters.get('full_correlation', False)
+    results = parameters.get('results', False)
+    num_complete = parameters.get('num_complete', 0)
+    save_ckpt, freq_ckpt, path_ckpt, dev = parameters.get('save_checkpoints', (False, 1, '', ''))
 
-    # measure alignment throughout training
-    if measure_alignment: 
-        alignment = []
+    if not results:
+        # initialize dictionary for storing performance across epochs
+        results = {'loss': torch.zeros((num_steps, num_nets)),
+                   'accuracy': torch.zeros((num_steps, num_nets))}
 
-    # measure weight norm throughout training
-    if measure_delta_weights: 
-        delta_weights = []
-        init_weights = [net.get_alignment_weights() for net in nets]
+        # measure alignment throughout training
+        if measure_alignment:
+            results['alignment'] = []
 
-    # measure average correlation for each layer
-    if measure_avgcorr: 
-        avgcorr = []
+        # measure weight norm throughout training
+        if measure_delta_weights:
+            results['delta_weights'] = []
+            results['init_weights'] = [net.get_alignment_weights() for net in nets]
 
-    # measure full correlation for each layer
-    if measure_fullcorr: 
-        fullcorr = []
+        # measure average correlation for each layer
+        if measure_avgcorr:
+            results['avgcorr'] = []
+
+        # measure full correlation for each layer
+        if measure_fullcorr:
+            results['fullcorr'] = []
+
+    if num_complete > 0: print('resuming training from checkpoint on epoch', num_complete)
 
     # --- training loop ---
-    for epoch in tqdm(range(parameters['num_epochs']), desc="training epoch"):
+    for epoch in tqdm(range(num_complete, parameters['num_epochs']), desc="training epoch"):
         for idx, batch in enumerate(tqdm(dataloader, desc="minibatch", leave=False)):
             cidx = epoch*len(dataloader) + idx
             images, labels = dataset.unwrap_batch(batch)
 
             # Zero the gradients
-            for opt in optimizers: 
+            for opt in optimizers:
                 opt.zero_grad()
 
             # Perform forward pass
@@ -62,42 +75,39 @@ def train(nets, optimizers, dataset, **parameters):
                 l.backward()
                 opt.step()
 
-            track_loss[cidx] = torch.tensor([l.item() for l in loss])
-            track_accuracy[cidx] = torch.tensor([dataset.measure_accuracy(output, labels) for output in outputs])
+            results['loss'][cidx] = torch.tensor([l.item() for l in loss])
+            results['accuracy'][cidx] = torch.tensor([dataset.measure_accuracy(output, labels) for output in outputs])
 
             if measure_alignment:
                 # Measure alignment if requested
-                alignment.append([net.measure_alignment(images, precomputed=True, method='alignment') 
+                results['alignment'].append([net.measure_alignment(images, precomputed=True, method='alignment') 
                                   for net in nets])
             
             if measure_delta_weights:
                 # Measure change in weights if requested
-                delta_weights.append([net.compare_weights(init_weight)
-                                      for net, init_weight in zip(nets, init_weights)])
+                results['delta_weights'].append([net.compare_weights(init_weight)
+                                      for net, init_weight in zip(nets, results['init_weights'])])
                 
             # note: the double use of measure_correlation is inefficient and could probably 
             # be precomputed once then operated on and appended differently for each term
             if measure_avgcorr:
-                avgcorr.append([net.measure_correlation(images, precomputed=True, reduced=True) for net in nets])
+                results['avgcorr'].append([net.measure_correlation(images, precomputed=True, reduced=True) for net in nets])
             
             if measure_fullcorr:
-                fullcorr.append([net.measure_correlation(images, precomputed=True, reduced=False) for net in nets])
-    
-    # create results dictionary
-    results = {
-        'loss': track_loss,
-        'accuracy': track_accuracy,
-    }
-    
-    # add optional analyses
-    if measure_alignment: 
-        results['alignment'] = condense_values(transpose_list(alignment))
-    if measure_delta_weights:
-        results['delta_weights'] = condense_values(transpose_list(delta_weights))
-    if measure_avgcorr:
-        results['avgcorr'] = condense_values(transpose_list(avgcorr))
-    if measure_fullcorr:
-        results['fullcorr'] = condense_values(transpose_list(fullcorr))
+                results['fullcorr'].append([net.measure_correlation(images, precomputed=True, reduced=False) for net in nets])
+
+        if save_ckpt & (epoch % freq_ckpt == 0):
+            save_checkpoint(nets,
+                            optimizers,
+                            results | {'prms': parameters,
+                                       'epoch': epoch,
+                                       'device': dev},
+                            path_ckpt)
+
+    # condense optional analyses
+    for k in ['alignment', 'delta_weights', 'avgcorr', 'fullcorr']:
+        if k not in results.keys(): continue
+        results[k] = condense_values(transpose_list(results[k]))
 
     return results
 
@@ -294,3 +304,15 @@ def progressive_dropout(nets, dataset, alignment=None, **parameters):
             net.train()
 
     return results
+
+
+def save_checkpoint(nets, optimizers, results, path):
+    """
+    Method for saving checkpoints for networks throughout training.
+    """
+    multi_model_ckpt = {f'model_state_dict_{i}': net.state_dict()
+                        for i, net in enumerate(nets)}
+    multi_optimizer_ckpt = {f'optimizer_state_dict_{i}': opt.state_dict()
+                            for i, opt in enumerate(optimizers)}
+    checkpoint = results | multi_model_ckpt | multi_optimizer_ckpt
+    torch.save(checkpoint, path)
