@@ -39,4 +39,4 @@ def dataset_path(dataset):
     elif dataset=='CIFAR10' or dataset=='CIFAR100':
         return data_path()
     elif dataset=='ImageNet':
-        return Path('/n/holylabs/LABS/bsabatini_lab/Lab/ImageNet')
+        return Path('/n/holyscratch01/bsabatini_lab/Lab/ImageNet/')
