@@ -32,19 +32,17 @@ def no_grad(no_grad=True):
 def test_nets(func):
     @wraps(func)
     def wrapper(nets, *args, **kwargs):
-        # figure out which networks are in training mode
-        in_training_mode = [net.training for net in nets]
-        # put networks in evaluation mode
-        for net in nets:
-            net.eval()
+        # get original training mode and set to eval
+        in_training_mode = [set_net_mode(net, training=False) for net in nets]
 
         # do decorated function
         func_outputs = func(nets, *args, **kwargs)
 
         # return networks to whatever mode they used to be in 
         for train_mode, net in zip(in_training_mode, nets):
-            if train_mode:
-                net.train()
+            set_net_mode(net, training=train_mode)
+
+        # return decorated function outputs
         return func_outputs
     
     # return decorated function
@@ -53,36 +51,35 @@ def test_nets(func):
 def train_nets(func):
     @wraps(func)
     def wrapper(nets, *args, **kwargs):
-        # figure out which networks are in training mode
-        in_training_mode = [net.training for net in nets]
-        # put networks in training mode
-        for net in nets:
-            net.train()
+        # get original training mode and set to train
+        in_training_mode = [set_net_mode(net, training=True) for net in nets]
 
         # do decorated function
         func_outputs = func(nets, *args, **kwargs)
 
         # return networks to whatever mode they used to be in 
         for train_mode, net in zip(in_training_mode, nets):
-            if not train_mode:
-                net.eval()
+            set_net_mode(net, training=train_mode)
+
+        # return decorated function outputs
         return func_outputs
     
     # return decorated function
     return wrapper
 
+def set_net_mode(net, training=True):
+    """helper for setting mode of network and returning current mode"""
+    # get current mode of network
+    in_training_mode = net.training
+    # set to training mode or evaluation mode
+    if training:
+        net.train()
+    else:
+        net.eval()
+    # return original mode of network
+    return in_training_mode
 
-
-# ---- decorators for tracker class methods ----
-def handle_keep_planes(func):
-    """decorator to handle the keep_planes argument in a standard way for the tracker class"""
-    @wraps(func)
-    def wrapper(tracker_instance, *args, keep_planes=None, **kwargs):
-        keep_planes = tracker_instance.get_keep_planes(keep_planes=keep_planes)
-        return func(tracker_instance, *args, keep_planes=keep_planes, **kwargs)
-    return wrapper
-
-
+# ------- some other things -------
 def get_device(obj):
     """simple method to get device of input tensor or nn.Module"""
     if isinstance(obj, torch.nn.Module):
@@ -121,18 +118,38 @@ def smartcorr(input):
 
 def batch_cov(input, centered=True):
     """
-    Performs batched covariance on input data of shape (batch, dim, samples)
+    Performs batched covariance on input data of shape (batch, dim, samples) or (dim, samples)
 
-    Where the resulting batch covariance matrix has shape (batch, dim, dim)
-    and bcov[i] = torch.cov(input[i])
+    Where the resulting batch covariance matrix has shape (batch, dim, dim) or (dim, dim)
+    and bcov[i] = torch.cov(input[i]) if input.ndim==3
 
     if centered=True (default) will subtract the means first
     """
-    D = input.size(1)
+    assert (input.ndim == 2) or (input.ndim == 3), "input must be a 2D or 3D tensor"
+    # check if batch dimension was provided
+    no_batch = input.ndim == 2 
+    
+    # add an empty batch dimension if not provided
+    if no_batch: 
+        input = input.unsqueeze(0) 
+    
+    # measure number of samples of each input matrix
+    S = input.size(2) 
+    
+    # subtract mean if doing centered covariance
     if centered:
         input = input - input.mean(dim=2, keepdim=True) 
+
+    # measure covariance of each input matrix
     bcov = torch.bmm(input, input.transpose(1, 2))
-    bcov /= (D-1)
+    
+    # correct for number of samples
+    bcov /= (S-1)
+    
+    # remove empty batch dimension if not provided
+    if no_batch: 
+        bcov = bcov.squeeze(0) 
+
     return bcov
 
 def alignment(input, weight, method='alignment'):
@@ -179,22 +196,22 @@ def alignment_linear(activity, layer, method='alignment'):
     return alignment(activity, layer.weight.data, method=method)
 
 
-def alignment_convolutional(activity, layer, each_stride=True, method='alignment'):
+def alignment_convolutional(activity, layer, by_stride=True, method='alignment'):
     """
     wrapper for alignment of convolutional layer (for conv2d)
 
     there are two natural methods - one is to measure the alignment using each 
     convolutional stride, the second is to measure the alignment of the full 
-    unfolded layer as if it was a matrix multiplication. each_stride determines
+    unfolded layer as if it was a matrix multiplication. by_stride determines
     which one to use. 
     
-    when each_stride=True, a weighted average of the alignment at each stride is
+    when by_stride=True, a weighted average of the alignment at each stride is
     taken where the weights are the variance in the data at that stride. This way,
     the output is a (num_output_channels, ) shaped tensor regardless of the setting
-    used for each_stride.
+    used for by_stride.
     """
     h_max, w_max = get_maximum_strides(activity.shape[2], activity.shape[3], layer)
-    if each_stride:
+    if by_stride:
         preprocess = transforms.Pad(layer.padding)
         processed_activity = preprocess(activity)
         num_looks = h_max * w_max
@@ -211,7 +228,7 @@ def alignment_convolutional(activity, layer, each_stride=True, method='alignment
         align = torch.sum(align_layer * variance_stride.view(1, -1)) / torch.sum(variance_stride)
         return align
     else:
-        layer_prms = dict(stride=layer.stride, padding=layer.padding, dilation=layer.dilation)
+        layer_prms = get_unfold_params(layer)
         unfolded_input = torch.nn.functional.unfold(activity, layer.kernel_size, **layer_prms)
         unfolded_input = unfolded_input.transpose(1, 2).reshape(activity.size(0), -1)
         unfolded_weight = layer.weight.data.view(layer.weight.size(0), -1).repeat(1, h_max*w_max)
@@ -234,6 +251,9 @@ def get_maximum_strides(h_input, w_input, layer):
     w_max = int(np.floor((w_input + 2*layer.padding[1] - layer.dilation[1]*(layer.kernel_size[1] - 1) -1)/layer.stride[1] + 1))
     return h_max, w_max
 
+def get_unfold_params(layer):
+    return dict(stride=layer.stride, padding=layer.padding, dilation=layer.dilation)
+
 def correlation(output, method='corr'):
     """
     Expects a batch x neuron tensor of output activity of a layer
@@ -252,27 +272,27 @@ def correlation_linear(output, method='corr'):
     """wrapper for correlation of linear layer"""
     return correlation(output, method=method)
 
-def correlation_convolutional(output, method='corr', each_stride=False):
+def correlation_convolutional(output, method='corr', by_stride=False):
     """
     wrapper for correlation of convolutional layer (conv2d)
     
     there are two natural methods - one is to measure the correlation using each 
     convolutional stride, the second is to measure the correlation of the full 
-    unfolded layer. each_stride determines which one to use. 
+    unfolded layer. by_stride determines which one to use. 
     
-    when each_stride=True, a weighted average of the correlation at each stride is
+    when by_stride=True, a weighted average of the correlation at each stride is
     taken where the weights are the variance in the output (across channels and batch)
     at that stride. This way, the output is a (num_output_channels, num_output_channels)
-    shaped tensor regardless of the setting used for each_stride.
+    shaped tensor regardless of the setting used for by_stride.
 
     NOTE: 
-    This choice for each_stride=True was made because it works and is a simple way
+    This choice for by_stride=True was made because it works and is a simple way
     of averaging across strides. There might be a smarter way to average where the per
     channel variance is used rather than the across channel variance. We should think
     about that and make a better decision, or potentially created an option for doing
     it either way depending on the scientific goal.
     """
-    if each_stride:
+    if by_stride:
         num_channels, h_max, w_max = output.size(1), output.size(2), output.size(3)
         corr = torch.zeros((num_channels, num_channels), dtype=output.dtype).to(get_device(output))
         vars = []
