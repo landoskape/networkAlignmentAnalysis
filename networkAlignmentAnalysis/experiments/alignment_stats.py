@@ -85,13 +85,21 @@ class AlignmentStatistics(Experiment):
         # we don't actually use the eigvecs for anything right now, eigvecs=eigvecs)    
         eigen_results = dict(beta=beta, eigvals=eigvals, class_betas=class_betas, class_names=dataset.test_loader.dataset.classes) 
 
+        # do targeted dropout experiment
+        print('performing targeted eigenvector dropout...')
+        evec_dropout_parameters = dict(num_drops=self.args.num_drops, by_layer=self.args.dropout_by_layer)
+        evec_dropout_results = train.eigenvector_dropout(nets, dataset, eigvecs, **evec_dropout_parameters)
+
+        
         # make full results dictionary
         results = dict(
             train_results=train_results,
             test_results=test_results,
             dropout_results=dropout_results,
             dropout_parameters=dropout_parameters,
-            eigen_results=eigen_results
+            eigen_results=eigen_results,
+            evec_dropout_results=evec_dropout_results,
+            evec_dropout_parameters=evec_dropout_parameters,
         )    
 
         # return results and trained networks
@@ -102,9 +110,18 @@ class AlignmentStatistics(Experiment):
         """
         main plotting loop
         """
-        self.plot_train_results(results['train_results'], results['test_results'])
-        self.plot_dropout_results(results['dropout_results'], results['dropout_parameters'])
+        self.plot_train_results(results['train_results'], 
+                                results['test_results'])
+        
+        self.plot_dropout_results(results['dropout_results'], 
+                                  results['dropout_parameters'], 
+                                  dropout_type='nodes')
+        
         self.plot_eigenfeatures(results['eigen_results'])
+
+        self.plot_dropout_results(results['evec_dropout_results'], 
+                                  results['evec_dropout_parameters'], 
+                                  dropout_type='eigenvectors')
 
     # ----------------------------------------------
     # ------ methods for main experiment loop ------
@@ -126,10 +143,18 @@ class AlignmentStatistics(Experiment):
         else:
             raise ValueError(f"optimizer ({self.args.optimizer}) not recognized")
         
-        nets = [get_model(self.args.network, build=True, dataset=self.args.dataset, dropout=self.args.default_dropout, ignore_flag=not(self.args.use_flag))
+        nets = [get_model(self.args.network, 
+                          build=True, 
+                          dataset=self.args.dataset, 
+                          dropout=self.args.default_dropout, 
+                          ignore_flag=not(self.args.use_flag))
                 for _ in range(self.args.replicates)]
+        
         nets = [net.to(self.device) for net in nets]
-        optimizers = [optim(net.parameters(), lr=self.args.default_lr, weight_decay=self.args.default_wd)
+        
+        optimizers = [optim(net.parameters(), 
+                            lr=self.args.default_lr, 
+                            weight_decay=self.args.default_wd)
                       for net in nets]
         
         return nets, optimizers
@@ -171,7 +196,6 @@ class AlignmentStatistics(Experiment):
 
         print("getting statistics on run data...")
         alignment = torch.stack([torch.mean(align, dim=2) for align in train_results['alignment']])
-        correlation = torch.stack([torch.mean(corr, dim=2) for corr in train_results['avgcorr']])
         
         cmap = mpl.colormaps['tab10']
 
@@ -181,8 +205,6 @@ class AlignmentStatistics(Experiment):
                                                                 num_types=num_types, dim=1, method='se')
 
         align_mean, align_se = compute_stats_by_type(alignment, num_types=num_types, dim=1, method='se')
-
-        corr_mean, corr_se = compute_stats_by_type(correlation, num_types=num_types, dim=1, method='se')
 
         test_loss_mean, test_loss_se = compute_stats_by_type(torch.tensor(test_results['loss']),
                                                                 num_types=num_types, dim=0, method='se')
@@ -272,29 +294,9 @@ class AlignmentStatistics(Experiment):
         self.plot_ready('train_alignment_by_layer')
 
 
-        # Make Correlation Figure
-        fig, ax = plt.subplots(1, num_layers, figsize=(num_layers*figdim, figdim), layout='constrained', sharex=True)
-        for idx, label in enumerate(labels):
-            for layer in range(num_layers):
-                cmn = corr_mean[layer, idx]
-                cse = corr_se[layer, idx]
-                ax[layer].plot(range(num_train_epochs), cmn, color=cmap(idx), label=label)
-                ax[layer].fill_between(range(num_train_epochs), cmn+cse, cmn-cse, color=(cmap(idx), alpha))
-
-        for layer in range(num_layers):
-            ax[layer].set_ylim(0, None)
-            ax[layer].set_xlabel('Training Epoch')
-            ax[layer].set_ylabel('Correlation')
-            ax[layer].set_title(f"Layer {layer}")
-
-        ax[0].legend(loc='lower right')
-
-        self.plot_ready('train_correlation_by_layer')
-
-
-    def plot_dropout_results(self, dropout_results, dropout_parameters):
+    def plot_dropout_results(self, dropout_results, dropout_parameters, dropout_type='nodes'):
         num_types = 1
-        labels = [f"{self.args.network}"]
+        labels = [f"{self.args.network} - dropout {dropout_type}"]
         cmap = mpl.colormaps['Set1']
         alpha = 0.3
         msize = 10
@@ -306,6 +308,7 @@ class AlignmentStatistics(Experiment):
         dropout_fraction = dropout_results['dropout_fraction']
         by_layer = dropout_results['by_layer']
         extra_name = 'by_layer' if by_layer else 'all_layers'
+        extra_name += dropout_type
 
         # Get statistics across each network type for progressive dropout experiment
         print("measuring statistics on dropout analysis...")
@@ -452,7 +455,7 @@ class AlignmentStatistics(Experiment):
                 ax[1, layer].set_xscale('log')
                 ax[0, layer].set_xlabel('Input Dimension')
                 ax[1, layer].set_xlabel('Sorted Input Dim')
-                ax[0, layer].set_ylabel('Relative Eigval / Beta')
+                ax[0, layer].set_ylabel('Relative Eigval & Beta')
                 ax[1, layer].set_ylabel('Relative Beta (Sorted)')
                 ax[0, layer].set_title(f"Layer {layer}")
                 ax[1, layer].set_title(f"Layer {layer}")
@@ -483,7 +486,7 @@ class AlignmentStatistics(Experiment):
                 ax[layer].set_xscale('log')
                 ax[layer].set_yscale('log')
                 ax[layer].set_xlabel('Input Dimension')
-                ax[layer].set_ylabel('Relative Eigval / Beta')
+                ax[layer].set_ylabel('Relative Eigval & Beta')
                 ax[layer].set_title(f"Layer {layer}")
 
                 if layer==num_layers-1:
@@ -515,7 +518,7 @@ class AlignmentStatistics(Experiment):
                 ax[1, layer].set_yscale('log')
                 ax[0, layer].set_xlabel('Input Dimension')
                 ax[1, layer].set_xlabel('Sorted Input Dim')
-                ax[0, layer].set_ylabel('Relative Eigval / Class Loading (RMS)')
+                ax[0, layer].set_ylabel('Relative Eigval & Class Loading (RMS)')
                 ax[1, layer].set_ylabel('Relative Class Loading (RMS)')
                 ax[0, layer].set_title(f"Layer {layer}")
                 ax[1, layer].set_title(f"Layer {layer}")
