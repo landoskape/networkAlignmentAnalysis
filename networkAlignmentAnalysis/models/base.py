@@ -7,7 +7,16 @@ from torch import nn
 from warnings import warn
 
 from .layers import LAYER_REGISTRY, REGISTRY_REQUIREMENTS, check_metaparameters
-from ..utils import check_iterable, get_maximum_strides, batch_cov, named_transpose, weighted_average, get_device, remove_by_idx
+from ..utils import check_iterable
+from ..utils import get_maximum_strides
+from ..utils import batch_cov
+from ..utils import named_transpose
+from ..utils import weighted_average
+from ..utils import get_device
+from ..utils import remove_by_idx
+from ..utils import set_net_mode
+from ..utils import get_unfold_params
+from ..utils import sklearn_pca
 
 class AlignmentNetwork(nn.Module, ABC):
     """
@@ -86,9 +95,11 @@ class AlignmentNetwork(nn.Module, ABC):
         if not isinstance(layer, nn.Module):
             raise TypeError(f"provided layer is of type: {type(layer)}, but only nn.Module objects are permitted!")
         
+        # load default metaparameters for this type of layer (or empty dictionary)
         metaparameters = LAYER_REGISTRY.get(type(layer), {})
+        
+        # for each possible entry in layer metaparameters, check if it's provided and not none, then update it
         for metaprms in REGISTRY_REQUIREMENTS:
-            # for each possible entry in layer metaparameters, check if it's provided, not none, then update it
             if metaprms in kwargs and kwargs[metaprms] is not None:
                 metaparameters[metaprms]=kwargs[metaprms]
         
@@ -178,6 +189,23 @@ class AlignmentNetwork(nn.Module, ABC):
             setattr(self, 'dropout', p)
         
     @torch.no_grad()
+    def get_layer_inputs(self, x, precomputed=False):
+        """method for getting list of layer inputs throughout the network"""
+        if not precomputed:
+            # do a forward pass and store hidden activations if not precomputed
+            _ = self.forward(x, store_hidden=True)
+        
+        # filter activations by inputs to alignment layers 
+        layer_inputs = []
+        possible_inputs = [x, *self.hidden[:-1]]
+        for inputs, metaprms in zip(possible_inputs, self.metaparameters):
+            if self._include_layer(metaprms):
+                layer_inputs.append(inputs)
+
+        # return outputs
+        return layer_inputs
+    
+    @torch.no_grad()
     def get_layer_outputs(self, x=None, precomputed=False):
         """method for getting list of layer outputs throughout the network"""
         if not precomputed:
@@ -195,23 +223,6 @@ class AlignmentNetwork(nn.Module, ABC):
 
         # return outputs
         return layer_outputs
-    
-    @torch.no_grad()
-    def get_layer_inputs(self, x, precomputed=False):
-        """method for getting list of layer inputs throughout the network"""
-        if not precomputed:
-            # do a forward pass and store hidden activations if not precomputed
-            _ = self.forward(x, store_hidden=True)
-        
-        # filter activations by inputs to alignment layers 
-        layer_inputs = []
-        possible_inputs = [x, *self.hidden[:-1]]
-        for inputs, metaprms in zip(possible_inputs, self.metaparameters):
-            if self._include_layer(metaprms):
-                layer_inputs.append(inputs)
-
-        # return outputs
-        return layer_inputs
     
     @torch.no_grad()
     def get_alignment_layers(self):
@@ -241,34 +252,83 @@ class AlignmentNetwork(nn.Module, ABC):
         return idx_layers
     
     @torch.no_grad()
-    def get_alignment_weights(self, with_unfold=False, input_to_layers=None):
+    def get_alignment_weights(self, flatten=False, by_stride=True, inputs=None):
         """
         convenience method for retrieving registered weights for alignment measurements throughout the network
         
-        optionally unfold convolutional weights if requested (by **with_unfold** set to True), this requires 
-        the **input_to_layers** to be provided to determine how many strides to unfold for
-        """
-        if with_unfold and input_to_layers is None:
-            raise ValueError("If unfolding is requested, input_to_layers must be provided.")
+        if flatten=True, will flatten weights so they have shape (nodes/channels, numel_per_weight)
         
-        # get weights
-        weights = [layer.weight.data for layer in self.get_alignment_layers()]
+        if by_stride==True, will maintain convolutional weights "as are" to process them for each stride
+        if by_stride==False, will unfold weights and expand to shape of input to layer (requires inputs)
+        """
+        # get layers and metaparameters
+        layers = self.get_alignment_layers()
+        metaprms = self.get_alignment_metaparameters()
+        
+        # check input arguments
+        if not by_stride:
+            if inputs is None:
+                raise ValueError("If unfolding convolutional layers is requested, input_to_layers must be provided to determine the correct shape.")
+            if len(inputs) != len(layers):
+                raise ValueError(f"There are {len(weights)} registered weights but only {len(inputs)} were provided.")
+        
+        # go through each layer and retrieve weight as desired
+        weights = []
+        for input, layer, metaprm in zip(inputs, layers, metaprms):
+            # get weight data for this layer
+            weight = layer.weight.data
 
-        # unfold weights if requested
-        if with_unfold: 
-            if len(input_to_layers) != len(weights):
-                raise ValueError(f"There are {len(weights)} registered weights but only {len(input_to_layers)} were provided.")
+            # if convolutional layer and requesting unfolding:
+            if metaprm['unfold'] and not by_stride:
+                num_strides = prod(get_maximum_strides(input.size(2), input.size(3), layer))
+                weight = weight.view(weight.size(0), -1).repeat(1, num_strides)
 
-            # measure number of strides per layer
-            layers = self.get_alignment_layers()
-            num_strides = [prod(get_maximum_strides(input.shape[2], input.shape[3], layer))
-                           for input, layer in zip(input_to_layers, layers)]
-            
-            # then unfold and repeat weights for each stride
-            weights = [weight.view(weight.size(0), -1).repeat(1, strides)
-                       for weight, strides in zip(weights, num_strides)]
+            # if requesting flat weights, flatten them
+            if flatten:
+                weight = weight.flatten(start_dim=1)
+                
+            # add weights to list
+            weights.append(weight)
 
+        # return 
         return weights
+    
+    def _preprocess_inputs(self, inputs_to_layers, by_stride=True):
+        """
+        helper method for processing inputs to layers as needed for certain alignment operations
+
+        Operations by layer type
+        ------------------------
+        linear layer:
+            will leave inputs to layers unchanged if input to a feedforward layer
+        convolutional layer:
+            will unfold inputs to (batch, full_conv_dim) if by_stride=False
+            will unfold inputs to (batch, conv_weight_dim, num_strides) if by_stride=True
+        
+        """
+        # initialize new list of inputs to layers
+        preprocessed = []
+
+        # get layer parameters and metaparameters
+        layers = self.get_alignment_layers()
+        metaprms = self.get_alignment_metaparameters()
+
+        # do requested processing and add to output
+        for input, layer, metaprm in zip(inputs_to_layers, layers, metaprms):
+            if metaprm['unfold']:
+                # if convolutional layer, unfold layer to (batch / conv_dim / num_strides)
+                layer_prms = get_unfold_params(layer)
+                unfolded_input = torch.nn.functional.unfold(input, layer.kernel_size, **layer_prms)
+                # if not using "by_stride", reshape to (batch_dim, full_conv_dim)
+                if not by_stride:
+                    unfolded_input = unfolded_input.transpose(1, 2).reshape(input.size(0), -1)
+                preprocessed.append(unfolded_input)
+            else:
+                # if linear layer, no preprocessing should ever be required
+                preprocessed.append(input)
+        
+        # return processed input data
+        return preprocessed
     
     @torch.no_grad()
     def compare_weights(self, weights):
@@ -331,17 +391,23 @@ class AlignmentNetwork(nn.Module, ABC):
     
 
     @torch.no_grad()
-    def forward_eigenvector_dropout(self, x, eigenvectors, idxs, layers):
+    def forward_eigenvector_dropout(self, x, eigenvalues, eigenvectors, idxs, layers, by_stride=True):
         """
         perform forward pass with targeted dropout of loadings on eigenvectors on input to hidden layers
 
-        **eigenvectors**, **idxs** and **layers** are matched length tuples describing: 
+        **eigenvalues**, **eigenvectors**, **idxs** and **layers** are matched length tuples describing: 
+        eigenvalues: the eigenvalues of each eigenvector for the input to each layer
         eigenvectors: the eigenvectors of activity corresponding to the input to each layer
         idxs: which eigenvectors to dropout from the activity as it propagates through the network
-        layers: which layers to do dropouts in
+        layers: which layers to do dropouts in (an index)
+
+        by_stride indicates whether the eigenvectors were computed by stride for convolutional layers
+        and will dropout eigenvectors from each stride independently. if by_stride=False, will interpret
+        it as a single unfolded matrix multiplication.
         
         returns the output accounting for targeted dropout and also the full list of hidden
-        activations after targeted dropout
+        activations after targeted dropout. will correct the norm based on the fraction of 
+        variance contained in the eigenvalues
         """
         assert check_iterable(idxs) and check_iterable(layers), "idxs and layers need to be iterables with the same length"
         assert len(idxs)==len(layers), "idxs and layers need to be iterables with the same length"
@@ -352,30 +418,130 @@ class AlignmentNetwork(nn.Module, ABC):
         hidden_inputs = []
         for idx_layer, (layer, metaprms) in enumerate(zip(self.layers, self.metaparameters)):
             if idx_layer in layers:
+                # we need to get the target subspace after dropping out eigenvectors
+
                 # get index to target layer 
                 idx_to_layer = {val:idx for idx, val in enumerate(layers)}[idx_layer]
+
                 # get dropout indices of which eigenvectors to remove
                 dropout_idx = idxs[idx_to_layer]
-                # retrieve only the requested eigenvectors
-                dropout_evec = remove_by_idx(eigenvectors[idx_to_layer].to(device), dropout_idx, 1)
 
-                # remove dropout eigenvectors by projecting and inverting 
-                x = torch.matmul(torch.matmul(x, dropout_evec), dropout_evec.T)
-                
-                # -- I think having a kwarg where you can either maintain the norm of the input or not is gonna work just fine --
-                # -- We can also use an eigenvalue based model where we correct the norm by the relative variance of dropped layers --
-                # -- ^^ on average I suppose it'll be the same..., but in practice the deviation will depend on each minibatch ^^ --
-            
+                # retrieve only the requested eigenvectors & eigenvalues
+                dropout_evec = remove_by_idx(eigenvectors[idx_to_layer].to(device), dropout_idx, 1)
+                dropout_eval = remove_by_idx(eigenvalues[idx_to_layer], dropout_idx, 0)
+
+                # correction is defined as the square root as the ratio of variance preserved in the subspace
+                # this will roughly preserve the average norm of the data for each sample
+                dropout_correction = torch.sqrt(torch.sum(eigenvalues[idx_to_layer]) / torch.sum(dropout_eval))
+
+            else:
+                # if not target layer, we don't want to do any subspace processing
+                dropout_evec = None
+                dropout_correction = None
+
+            # do forward pass through this layer
+            kwargs = dict(subspace=dropout_evec, correction=dropout_correction, by_stride=by_stride)
+            x, input_to_layer = self._forward_subspace_dispatch(x, layer, metaprms, **kwargs)
+
             if self._include_layer(metaprms):
-                hidden_inputs.append(x)
-            x = layer(x) # pass through next layer after potentially dropping out certain dimensions of input
+                hidden_inputs.append(input_to_layer)
 
         # return output of network and inputs to each alignment layer
         return x, hidden_inputs
     
-    
+    def _forward_subspace_dispatch(self, x, layer, metaprms, subspace=None, correction=None, **kwargs):
+        """helper for sending to forward function of desired type"""
+        if metaprms['unfold']:
+            return self._forward_subspace_convolutional(x, layer, metaprms, subspace=subspace, 
+                                                        correction=correction, **kwargs)
+        else:
+            return self._forward_subspace_linear(x, layer, metaprms, subspace=subspace, 
+                                                 correction=correction, **kwargs)
+
+
+    def _forward_subspace_linear(self, x, layer, _, subspace=None, correction=None, **kwargs):
+        """
+        implement forward pass for linear layer with optional subspace projection of input to layer
+        """
+        if subspace is not None:
+            x = torch.matmul(torch.matmul(x, subspace), subspace.T)
+            if correction is not None:
+                x = x * correction
+        out = layer(x)
+        return out, x
+
+    def _forward_subspace_convolutional(self, x, layer, metaprms, subspace=None, correction=None, by_stride=True, **kwargs):
+        """
+        implement forward pass for convolutional layer with optional subspace projection of input
+        
+        if subspace provided, will project x onto the subspace then onto it's transpose to keep
+        only some dimensions of the activity while keeping x in the same basis. 
+        (e.g. new_x = subspace @ subspace.T @ x)
+
+        then will pass through the layer.
+
+        by_stride indicates which subspace to project onto-- the "strides" subspace or the "full"
+        convolutional subspace. The dimensions of the subspace must be equal to the dimension of the
+        convolutional kernel if by_stride=True and must be equal to the dimension of the kernel times
+        the number of strides if by_stride=False.
+        """
+        def _conv_with_subspace(x, layer, by_stride, subspace, correction):
+            """internal helper for convolving in a subspace"""
+            # start by getting size of input to conv layer and layer parameters
+            h_max, w_max = get_maximum_strides(x.size(2), x.size(3), layer)
+            layer_prms = get_unfold_params(layer)
+
+            # this is the layer we want to reimplement with a subspace projection
+            x = torch.nn.functional.unfold(x, layer.kernel_size, **layer_prms)
+            if by_stride:
+                x = torch.matmul(subspace, torch.matmul(subspace.T, x))
+                if correction is not None:
+                    x = x * correction
+            else:
+                raise ValueError("Not implemented yet, sorry!")
+            
+            # save input to target conv layer
+            input_to_conv = x.clone()
+            
+            # perform convolution in unfolded space
+            weight = layer.weight.data
+            weight = weight.view(weight.size(0), -1)
+
+            # convolve
+            x = torch.matmul(weight, x).view(x.size(0), weight.size(0), h_max, w_max)
+
+            # add bias
+            x = x + layer.bias.view(-1, 1, 1)
+
+            return x, input_to_conv
+            
+        if subspace is not None:
+            if isinstance(layer, torch.nn.Sequential):
+                layer_idx = metaprms['layer_index']
+                for idx, sublayer in enumerate(layer):
+                    if idx == layer_idx:
+                        # if conv layer, do convolution with subspace
+                        x, input_to_conv = _conv_with_subspace(x, sublayer, by_stride, subspace, correction)
+                    else:
+                        # if not target layer, we can process with no funny business
+                        x = sublayer(x)
+
+                # return output of layer and input to convolutional layer
+                return x, input_to_conv
+            
+            else:
+                # if not packaged in sequential, can do this directly
+                x, input_to_conv = _conv_with_subspace(x, layer, by_stride, subspace, correction)
+
+            return x, input_to_conv
+        
+        else:
+            # if not using subspace, just pass input through layer and return input/output
+            return layer(x), x
+        
+                
     @torch.no_grad()
-    def measure_eigenfeatures(self, dataloader, DEVICE=None, with_updates=True, centered=True, full_conv=False):
+    def measure_eigenfeatures(self, dataloader, with_updates=True, centered=True, by_stride=True):
         """
         measure the eigenvalues and eigenvectors of the input to each layer
         and also measure how much each weight array uses each eigenvector
@@ -390,105 +556,124 @@ class AlignmentNetwork(nn.Module, ABC):
         if centered=False, will measure eigenfeatures of uncentered X.T @ X where
         x is the input to each alignment layer. 
 
-        **full_conv** is used to determine whether to unfold convolutional layers
-        -- if full_conv=True, will unfold and measure eigenfeatures that way
-        -- if full_conv=False, will measure for each stride (and take the average
+        **by_stride** is used to determine whether to use each stride of unfold conv layers
+        -- if by_stride=False, will unfold and measure eigenfeatures that way
+        -- if by_stride=True, will measure for each stride (and take the average
         across strides weighted by the variance of the input data)
         """
-        # Set device automatically if not provided
-        if DEVICE is None: 
-            DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
+        # get inputs to layers for entire dataset in dataloader
+        inputs, _ = self._process_collect_activity(dataloader, with_updates=with_updates, use_training_mode=False)
         
-        # Measure Activations (without dropout) for all images
-        training_mode = self.training # save for resetting at the end
+        # retrieve weights and flatten inputs as required by the by_stride parameter
+        weights = self.get_alignment_weights(flatten=True, by_stride=by_stride, inputs=inputs)
+        inputs = self._preprocess_inputs(inputs, by_stride=by_stride)
 
-        # turn off dropout and any training related features
-        self.eval()
+        # measure eigenfeatures
+        return self._measure_layer_eigenfeatures(inputs, weights, by_stride, centered=centered, with_updates=with_updates)
+    
 
-        # store input and measure activations for every element in dataloader
-        allinputs = []
-        dataloop = tqdm(dataloader) if with_updates else dataloader
-        for input, label in dataloop:
-            input = input.to(DEVICE)
-            allinputs.append(self.get_layer_inputs(input, precomputed=False))
+    def measure_class_eigenfeatures(self, dataloader, eigenvectors, rms=False, with_updates=True, by_stride=True):
+        """
+        propagate an entire dataset through the network and measure the contribution
+        of each eigenvector to each element of the class
 
-        # return network to original training mode
-        if training_mode: 
-            self.train()
-        else:
-            self.eval()
+        to keep things in a useful tensor format, will match samples across classes and
+        therefore may ignore "extra" samples if the dataloader doesn't have equal 
+        representation across classes. Keep in mind it will use the first N samples per
+        class where N=min_samples_per_class, so using a random dataloader is a good idea.
 
-        # create large list of tensors containing input to each layer
-        inputs_to_layers = [torch.cat([input[layer] for input in allinputs], dim=0).detach().cpu()
-                            for layer in range(self.num_layers())]
+        returns list of beta by class, where the list has len()==num_layers
+        and each element is a tensor with size (num_classes, num_dimensions, num_samples_per_class)
+
+        if rms=True, will convert beta_by_class to an average with the RMS method
+        """
+        # get inputs and labels to layers for entire dataset in dataloader
+        inputs, labels = self._process_collect_activity(dataloader, with_updates=with_updates, use_training_mode=False)
+
+        # get stacked indices to the elements of each class
+        num_classes = len(dataloader.dataset.classes)
+        idx_to_class = [torch.where(labels==ii)[0] for ii in range(num_classes)]
+        num_per_class = [len(idx) for idx in idx_to_class]
+        min_per_class = min(num_per_class)
+        if any([npc>min_per_class for npc in num_per_class]):
+            max_per_class = max(num_per_class)
+            if (max_per_class / min_per_class) > 2:
+                warn_message = f"Number of elements to each class is unequal (min={min_per_class}, max={max_per_class}). Clipping examples."
+                warn(warn_message, RuntimeWarning, stacklevel=1)
+            idx_to_class = [idx[:min_per_class] for idx in idx_to_class]
+
+        # use single tensor for fast indexing
+        idx_to_class = torch.stack(idx_to_class).unsqueeze(1)
+
+        # measure the contribution of each eigenvector on the representation of each input
+        beta_activity = []
+        zipped = zip(inputs, eigenvectors, self.get_alignment_layers(), self.get_alignment_metaparameters())
+        for input, evec, layer, metaprm in zipped:
+            if by_stride and metaprm['unfold']:
+                beta_activity.append((input @ evec).T.unsqueeze(0))
+
+        # organize activity by class in extra dimension
+        beta_by_class = [torch.gather(betas.expand(num_classes, -1, -1), 2, idx_to_class.expand(-1, betas.size(1), -1)) for betas in beta_activity]
+
+        # get average by class with RMS method (root-mean-square) if requested
+        if rms:
+            beta_by_class = [torch.sqrt(torch.mean(beta**2, dim=2)) for beta in beta_by_class]
         
-        # retrieve weights and flatten inputs if required
-        weights = []
-        metaprms = self.get_alignment_metaparameters()
-        zipped = zip(inputs_to_layers, self.get_alignment_layers(), metaprms)
-        for ii, (input, layer, metaprm) in enumerate(zipped):
-            weight = layer.weight.data # get alignment layer weight data
-            if metaprm['unfold']:
-                # get unfolded input activity
-                layer_prms = dict(stride=layer.stride, padding=layer.padding, dilation=layer.dilation)
-                unfolded_input = torch.nn.functional.unfold(input, layer.kernel_size, **layer_prms)
-                if full_conv:
-                    # flatten unfolded input
-                    unfolded_input = unfolded_input.transpose(1, 2).reshape(input.size(0), -1)
-                    inputs_to_layers[ii] = unfolded_input
+        # return beta by class in requested format (average or not based on rms value)
+        return beta_by_class
+    
 
-                    # unfold weights and add them to weights list
-                    num_strides = prod(get_maximum_strides(input.shape[2], input.shape[3], layer))
-                    unfolded_weights = weight.view(weight.size(0), -1).repeat(1, num_strides)
-                    weights.append(unfolded_weights)
+    def _measure_layer_eigenfeatures(self, inputs, weights, by_stride, centered=True, with_updates=True):
+        """
+        helper method for measuring eigenfeatures of each layer
 
-                else:
-                    # keep unfolded input activity in (dim x stride) format
-                    inputs_to_layers[ii] = unfolded_input
+        input should be preprocessed weights (see _preprocess_inputs())
+        weights should be preprocessed weights (in the case of convolutional layers, see get_alignment_weights())
+        
+        if by_stride, will measure for each stride of convolutional layers then average stride weighted by variance
+        if by_stride=False, expects fully unfolded and flattened inputs and weights
+        if centered=True, will use standard covariance, if False will not center!!
+        """
+        beta, eigenvalues, eigenvectors = [], [], []
+        
+        # go through each layers inputs, weights, and metaparameters
+        zipped = enumerate(zip(inputs, weights, self.get_alignment_metaparameters()))
+        iterate = tqdm(zipped) if with_updates else zipped
+        for ii, (input, weight, metaprm) in iterate:
+            if metaprm['unfold'] and not by_stride:
+                warn(f"It is not recommended to use by_stride=False for measuring eigenfeatures, this code is not ready and it might never be a good idea.", stacklevel=2)
 
-                    # flatten weights (without repeating!)
-                    flat_weights = weight.view(weight.size(0), -1)
-                    weights.append(flat_weights)
-
-            else:
-                # if not unfolding weights, just add them directly
-                weights.append(weight)
-
-        # Measure eigenfeatures of input to each layer
-        beta = []
-        eigenvalues = []
-        eigenvectors = []
-        zipped = zip(inputs_to_layers, weights, metaprms)
-        for input, weight, metaprm in zipped:
-            if not full_conv and metaprm['unfold']:
+            # if a convolutional layer and working by_stride, then:
+            if by_stride and metaprm['unfold']:
                 # measure variance across samples (each batch element of the dataset)
                 # average variance across dimensions of weight across each stride
                 bvar = torch.mean(torch.var(input, dim=0), dim=0) 
 
                 # measuring across each stride independently (for conv layers)
                 bcov = batch_cov(input.permute((2, 1, 0)), centered=centered)
-                brank = [torch.linalg.matrix_rank(bc) for bc in bcov]
                 
-                # eigh will fail if condition number is too high (which can happend
-                # in these strided input activity). If that's the case, we set the 
+                # eigh will fail if condition number is too high (which can happen
+                # in these strided input activities). If that's the case, we set the 
                 # covariance to the identity so eigh will work, and set the variance
                 # to 0 in that stride, so the weighted_average will ignore that stride.
                 for ii, bc in enumerate(bcov):
                     if torch.isinf(torch.linalg.cond(bc)):
-                        bvar[ii] = 0 # set variance to 0 to ignore this dimension
-                        bcov[ii] = torch.eye(bcov.size(1))
-                
+                        bvar[ii] = 0 # set variance to 0 to ignore this stride
+                        bcov[ii] = torch.eye(bcov.size(1)) # set to identity for simple eigvec decomp.
+
                 # measure eigenvalues and eigenvectors
-                w, v = named_transpose([torch.linalg.eigh(bc) for bc in bcov])
-                w_idx = [torch.argsort(-ww) for ww in w]
-                w = [ww[wi] for ww, wi in zip(w, w_idx)]
-                v = [vv[:, wi] for vv, wi in zip(v, w_idx)]
-                for ii, br in enumerate(brank):
-                    w[ii][br:] = 0
+                w, v = named_transpose([self._eigendecomposition(bc, use_rank=True) for bc in bcov])
                 
-                # stack eigenvectors and eigenvalues into tensor
-                w = torch.stack(w)
-                v = torch.stack(v)
+                # only keep strides when they have valid eigendecompositions
+                keep_index = []
+                for ii, ww in enumerate(w):
+                    if ww is not None:
+                        keep_index.append(ii) # add to keep index
+
+                # only keep valid strides
+                w = torch.stack([w[ii] for ii in keep_index])
+                v = torch.stack([v[ii] for ii in keep_index])
+                bvar = torch.stack([bvar[ii] for ii in keep_index])
 
                 # Measure abs value of dot product of weights on eigenvectors for each layer
                 num_strides = v.size(0)
@@ -506,20 +691,17 @@ class AlignmentNetwork(nn.Module, ABC):
                 eigenvectors.append(v_weighted_by_var)
 
             else:
-                # measuring with unfolded data (independent of layer type)
-                if centered:
-                    ccov = torch.cov(input.T) # get covariance of input
-                else:
-                    # get "covariance" without centering...
-                    ccov = (input.T @ input) /  (input.size(0) - 1)
-                crank = torch.linalg.matrix_rank(ccov) # measure rank of covariance
-                w, v = torch.linalg.eigh(ccov) # measure eigenvalues and vectors
-                w_idx = torch.argsort(-w) # sort by eigenvalue highest to lowest
-                w = w[w_idx]
-                v = v[:,w_idx]
+                # get covariance matrix
+                bcov = batch_cov(input.T, centered=centered)
 
-                # Automatically set eigenvalues to 0 when they are numerical errors!
-                w[crank:] = 0
+                if metaprm['unfold']: 
+                    # if doing eigendecomposition on a full convolutional layer (not by stride)
+                    # it's probably going to be a huge matrix and it's smarter to just use 
+                    # sklearn's IncrementalPCA directly (although there might be a more 
+                    # intelligent way to choose how to dispatch IncrementalPCA vs eigh...)
+                    w, v = sklearn_pca(bcov, use_rank=True)
+                else:
+                    w, v = self._eigendecomposition(bcov, use_rank=True)
 
                 # Measure abs value of dot product of weights on eigenvectors for each layer
                 weight = weight / torch.norm(weight, dim=1, keepdim=True)
@@ -531,64 +713,84 @@ class AlignmentNetwork(nn.Module, ABC):
 
         return beta, eigenvalues, eigenvectors
     
-    def measure_class_eigenfeatures(self, dataloader, eigenvectors, rms=False, DEVICE=None, with_updates=True):
+
+    def _eigendecomposition(self, C, use_rank=True):
         """
-        propagate an entire dataset through the network and measure the contribution
-        of each eigenvector to each element of the class
+        helper for getting eigenvalues and eigenvectors of covariance matrix
 
-        to keep things in a useful tensor format, will match samples across classes 
-        and therefore may ignore "extra" samples if the dataloader doesn't have equal
-        representation across classes. Keep in mind it will use the first N samples 
-        per class where N=min_samples_per_class, so using a random dataloader is smart.
+        will measure eigenvalues and eigenvectors with torch.linalg.eigh()
+        the output will be sorted from highest to lowest eigenvalue (& eigenvector)
 
-        returns list of beta by class, where the list has len()==num_layers
-        and each element is a tensor with size (num_classes, num_dimensions, num_samples_per_class)
-
-        if rms=True, will convert beta_by_class to an average with the RMS method
+        if use_rank=True, will measure the rank of the covariance matrix and zero
+        out any eigenvalues beyond the rank (that are usually nonzero numerical errors)
         """
-        # Set device automatically if not provided
-        DEVICE = get_device(self)
+        try:
+            # measure eigenvalues and eigenvectors
+            w, v = torch.linalg.eigh(C) 
 
+        except torch._C._LinAlgError as error:
+            # this happens if the algorithm failed to converge
+            # try with sklearn's incrementalPCA algorithm
+            return sklearn_pca(C, use_rank=use_rank)
+        
+        except Exception as error:
+            # if any other exception, raise it
+            raise error
+
+        # sort by eigenvalue from highest to lowest
+        w_idx = torch.argsort(-w)
+        w = w[w_idx]
+        v = v[:, w_idx]
+
+        # iff use_rank=True, will set eigenvalues to 0 for probable numerical errors
+        if use_rank:
+            crank = torch.linalg.matrix_rank(C) # measure rank of covariance
+            w[crank:] = 0 # set eigenvalues beyond rank to 0
+
+        # return eigenvalues and eigenvectors
+        return w, v
+    
+    def _process_collect_activity(self, dataloader, with_updates=True, use_training_mode=False):
+        """
+        helper for processing and collecting activity of network in response to all inputs of dataloader
+
+        automatically places all data on cpu
+
+        returns inputs to each alignment layer, concatenated across entire dataloader as a per layer list
+        returns labels of entire dataset
+
+        with_updates turns on or off the progress bar (using tqdm)
+        if use_training_mode=False, will put net into evaluation mode (and return to original mode)
+        if use_training_mode=True, will put net into training mode (and return to original mode)
+        """
+        # get device of network
+        device = get_device(self)
+        
+        # put network in evaluation mode
+        training_mode = set_net_mode(self, training=use_training_mode)
+
+        # store input and measure activations for every element in dataloader
         allinputs = []
         alllabels = []
         dataloop = tqdm(dataloader) if with_updates else dataloader
-        for input, label in dataloop:
-            input = input.to(DEVICE)
-            alllabels.append(label)
-            allinputs.append(self.get_layer_inputs(input, precomputed=False))
+        for input, labels in dataloop:
+            input = input.to(device)
+            layer_inputs = [input.cpu() for input in self.get_layer_inputs(input, precomputed=False)]
+            allinputs.append(layer_inputs)
+            alllabels.append(labels.cpu())
 
-        # concatenate input to layers and labels into single tensors
-        inputs_to_layers = [torch.cat([input[layer] for input in allinputs], dim=0).detach().cpu()
-                            for layer in range(self.num_layers())]
-        labels = torch.cat(alllabels)
+        # return network to original training/eval mode, whatever it was
+        set_net_mode(self, training=training_mode)
+
+        # create large list of tensors containing input to each layer
+        inputs = [torch.cat([input[layer] for input in allinputs], dim=0)
+                  for layer in range(self.num_layers())]
+        labels = torch.cat(alllabels, dim=0)
+
+        # return outputs
+        return inputs, labels
         
-        # get stacked indices to the elements of each class
-        num_classes = len(dataloader.dataset.classes)
-        idx_to_class = [torch.where(labels==ii)[0] for ii in range(num_classes)]
-        num_per_class = [len(idx) for idx in idx_to_class]
-        min_per_class = min(num_per_class)
-        if any([npc>min_per_class for npc in num_per_class]):
-            max_per_class = max(num_per_class)
-            if (max_per_class / min_per_class) > 2:
-                warn_message = f"Number of elements to each class is unequal (min={min_per_class}, max={max_per_class}). Clipping examples."
-                warn(warn_message, RuntimeWarning, stacklevel=1)
-            idx_to_class = [idx[:min_per_class] for idx in idx_to_class]
 
-        # use single tensor for fast indexing
-        idx_to_class = torch.stack(idx_to_class).unsqueeze(1)
-
-        # measure the contribution of each eigenvector on the representation of each input
-        beta_activity = [(input @ evec).T.unsqueeze(0) for input, evec in zip(inputs_to_layers, eigenvectors)]
-
-        # organize activity by class in extra dimension
-        beta_by_class = [torch.gather(betas.expand(num_classes, -1, -1), 2, idx_to_class.expand(-1, betas.size(1), -1)) for betas in beta_activity]
-
-        # get average by class with RMS method (root-mean-square) if requested
-        if rms:
-            beta_by_class = [torch.sqrt(torch.mean(beta**2, dim=2)) for beta in beta_by_class]
-        
-        # return beta by class in requested format (average or not based on rms value)
-        return beta_by_class
     
 
 # def ExperimentalNetwork(AlignmentNetwork):
