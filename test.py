@@ -26,6 +26,7 @@ if __name__ == '__main__':
     net_args = dict(
         ignore_flag=False
     )
+
     net = get_model(args.network, build=True, **net_args).to(DEVICE)
     dataset = get_dataset(args.dataset, build=True, transform_parameters=net, device=DEVICE)
 
@@ -37,9 +38,7 @@ if __name__ == '__main__':
 
     # out = net.measure_class_eigenfeatures(dataset.test_loader, eigenvectors, rms=False, with_updates=True)
 
-    dropout_results = train.eigenvector_dropout([net], dataset, [eigenvalues], [eigenvectors], train_set=False)
-
-    print('hi')
+    dropout_results = train.eigenvector_dropout([net], dataset, [eigenvalues], [eigenvectors], train_set=False, by_stride=True)
 
     # results = {
     #     'progdrop_loss_high': progdrop_loss_high / num_batches,

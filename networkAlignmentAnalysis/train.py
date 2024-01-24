@@ -345,6 +345,7 @@ def eigenvector_dropout(nets, dataset, eigenvalues, eigenvectors, **parameters):
     drop_fraction = torch.linspace(0,1,num_drops+2)[1:-1]
     by_layer = parameters.get('by_layer', False)
     num_layers = len(idx_dropout_layers) if by_layer else 1
+    by_stride = parameters.get('by_stride')
 
     # create index of eigenvalue for compatibility with get_dropout_indices
     idx_eigenvalue = [torch.fliplr(torch.tensor(range(0, ev.size(1))).expand(num_nets, -1)) for ev in eigenvectors[0]]
@@ -383,11 +384,28 @@ def eigenvector_dropout(nets, dataset, eigenvalues, eigenvectors, **parameters):
                     drop_layer = copy(idx_dropout_layers)
                 
                 # get output with targeted dropout
-                out_high = [net.forward_eigenvector_dropout(images, evals, evecs, [drop[idx, :] for drop in drop_high], drop_layer)[0]
+                out_high = [net.forward_eigenvector_dropout(images, 
+                                                            evals,
+                                                            evecs, 
+                                                            [drop[idx, :] for drop in drop_high], 
+                                                            drop_layer,
+                                                            by_stride=by_stride)[0]
                             for idx, (net, evals, evecs) in enumerate(zip(nets, eigenvalues, eigenvectors))]
-                out_low = [net.forward_eigenvector_dropout(images, evals, evecs, [drop[idx, :] for drop in drop_low], drop_layer)[0]
+                
+                out_low = [net.forward_eigenvector_dropout(images, 
+                                                           evals, 
+                                                           evecs, 
+                                                           [drop[idx, :] for drop in drop_low], 
+                                                           drop_layer,
+                                                           by_stride=by_stride)[0]
                             for idx, (net, evals, evecs) in enumerate(zip(nets, eigenvalues, eigenvectors))]
-                out_rand = [net.forward_eigenvector_dropout(images, evals, evecs, [drop[idx, :] for drop in drop_rand], drop_layer)[0]
+                
+                out_rand = [net.forward_eigenvector_dropout(images, 
+                                                            evals,
+                                                            evecs, 
+                                                            [drop[idx, :] for drop in drop_rand], 
+                                                            drop_layer,
+                                                            by_stride=by_stride)[0]
                             for idx, (net, evals, evecs) in enumerate(zip(nets, eigenvalues, eigenvectors))]
                 
                 # get loss with targeted dropout
