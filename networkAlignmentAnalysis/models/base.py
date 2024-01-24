@@ -412,7 +412,8 @@ class AlignmentNetwork(nn.Module, ABC):
         assert check_iterable(idxs) and check_iterable(layers), "idxs and layers need to be iterables with the same length"
         assert len(idxs)==len(layers), "idxs and layers need to be iterables with the same length"
         assert len(layers)==len(set(layers)), "layers must not have any repeated elements"
-        
+        assert len(layers)==len(eigenvalues), "list of eigenvalues must have same length as list of layers"
+        assert len(layers)==len(eigenvectors), "list of eigenvectors must have same length as list of layers"
         device = get_device(x)
 
         hidden_inputs = []
@@ -428,7 +429,7 @@ class AlignmentNetwork(nn.Module, ABC):
 
                 # retrieve only the requested eigenvectors & eigenvalues
                 dropout_evec = remove_by_idx(eigenvectors[idx_to_layer].to(device), dropout_idx, 1)
-                dropout_eval = remove_by_idx(eigenvalues[idx_to_layer], dropout_idx, 0)
+                dropout_eval = remove_by_idx(eigenvalues[idx_to_layer].to(device), dropout_idx, 0)
 
                 # correction is defined as the square root as the ratio of variance preserved in the subspace
                 # this will roughly preserve the average norm of the data for each sample
