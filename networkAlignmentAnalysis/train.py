@@ -1,5 +1,5 @@
 import time
-from copy import copy
+from copy import copy, deepcopy
 from tqdm import tqdm
 import torch
 from networkAlignmentAnalysis.utils import transpose_list, condense_values, value_by_layer, test_nets, train_nets
@@ -338,6 +338,7 @@ def eigenvector_dropout(nets, dataset, eigenvalues, eigenvectors, **parameters):
     
     # check if alignment has the right length (ie number of layers) (otherwise can't make assumptions about where the classification layer is)
     assert all([len(ev)==len(idx_dropout_layers) for ev in eigenvectors]), "the number of layers in **eigenvectors** doesn't correspond to the number of alignment layers"
+    assert all([len(ev)==len(idx_dropout_layers) for ev in eigenvalues]), "the number of layers in **eigenvalues** doesn't correspond to the number of alignment layers"
 
     # preallocate variables and define metaparameters
     num_nets = len(nets)
@@ -379,9 +380,13 @@ def eigenvector_dropout(nets, dataset, eigenvalues, eigenvectors, **parameters):
                 if by_layer:
                     drop_high, drop_low, drop_rand = [idx_high[layer]], [idx_low[layer]], [idx_rand[layer]]
                     drop_layer = [idx_dropout_layers[layer]]
+                    drop_evals = [[evals[layer]] for evals in eigenvalues]
+                    drop_evecs = [[evecs[layer]] for evecs in eigenvectors]
                 else:
                     drop_high, drop_low, drop_rand = idx_high, idx_low, idx_rand
                     drop_layer = copy(idx_dropout_layers)
+                    drop_evals = deepcopy(eigenvalues)
+                    drop_evecs = deepcopy(eigenvectors)
                 
                 # get output with targeted dropout
                 out_high = [net.forward_eigenvector_dropout(images, 
@@ -390,7 +395,7 @@ def eigenvector_dropout(nets, dataset, eigenvalues, eigenvectors, **parameters):
                                                             [drop[idx, :] for drop in drop_high], 
                                                             drop_layer,
                                                             by_stride=by_stride)[0]
-                            for idx, (net, evals, evecs) in enumerate(zip(nets, eigenvalues, eigenvectors))]
+                            for idx, (net, evals, evecs) in enumerate(zip(nets, drop_evals, drop_evecs))]
                 
                 out_low = [net.forward_eigenvector_dropout(images, 
                                                            evals, 
@@ -398,7 +403,7 @@ def eigenvector_dropout(nets, dataset, eigenvalues, eigenvectors, **parameters):
                                                            [drop[idx, :] for drop in drop_low], 
                                                            drop_layer,
                                                            by_stride=by_stride)[0]
-                            for idx, (net, evals, evecs) in enumerate(zip(nets, eigenvalues, eigenvectors))]
+                            for idx, (net, evals, evecs) in enumerate(zip(nets, drop_evals, drop_evecs))]
                 
                 out_rand = [net.forward_eigenvector_dropout(images, 
                                                             evals,
@@ -406,7 +411,7 @@ def eigenvector_dropout(nets, dataset, eigenvalues, eigenvectors, **parameters):
                                                             [drop[idx, :] for drop in drop_rand], 
                                                             drop_layer,
                                                             by_stride=by_stride)[0]
-                            for idx, (net, evals, evecs) in enumerate(zip(nets, eigenvalues, eigenvectors))]
+                            for idx, (net, evals, evecs) in enumerate(zip(nets, drop_evals, drop_evecs))]
                 
                 # get loss with targeted dropout
                 loss_high = [dataset.measure_loss(out, labels).item() for out in out_high]
