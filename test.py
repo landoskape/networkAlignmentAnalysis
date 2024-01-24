@@ -32,13 +32,14 @@ if __name__ == '__main__':
 
     optim = torch.optim.Adam(net.parameters(), lr=1e-2)
 
-    results = train.train([net], [optim], dataset, train_set=True, num_epochs=50, alignment=False)
+    # results = train.train([net], [optim], dataset, train_set=True, num_epochs=50, alignment=False)
 
     betas, eigenvalues, eigenvectors = net.measure_eigenfeatures(dataset.test_loader, by_stride=True)
 
     # out = net.measure_class_eigenfeatures(dataset.test_loader, eigenvectors, rms=False, with_updates=True)
 
-    dropout_results = train.eigenvector_dropout([net], dataset, [eigenvalues], [eigenvectors], train_set=False, by_stride=True)
+    dropout_results = train.eigenvector_dropout([net], dataset, [eigenvalues], [eigenvectors], 
+                                                train_set=False, by_stride=True, by_layer=True)
 
     # results = {
     #     'progdrop_loss_high': progdrop_loss_high / num_batches,
