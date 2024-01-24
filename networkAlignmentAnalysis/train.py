@@ -304,7 +304,7 @@ def progressive_dropout(nets, dataset, alignment=None, **parameters):
 
 @torch.no_grad()
 @test_nets
-def eigenvector_dropout(nets, dataset, eigenvectors, **parameters):
+def eigenvector_dropout(nets, dataset, eigenvalues, eigenvectors, **parameters):
     """
     method for testing network on supervised learning problem with eigenvector dropout
 
@@ -321,6 +321,8 @@ def eigenvector_dropout(nets, dataset, eigenvectors, **parameters):
     len(eigenvectors) = num_networks
     len(eigenvectors[i]) = num_alignment_layers for all i
     eigenvectors[i][j].shape = (num_dim_input_to_j, num_dim_input_to_j)
+
+    eigenvalues should have same structure except have vectors instead of square matrices
 
     will measure the loss and accuracy on the dataset using targeted dropout, where
     the method will progressively dropout more and more eigenvectors based on the highest,
@@ -381,12 +383,12 @@ def eigenvector_dropout(nets, dataset, eigenvectors, **parameters):
                     drop_layer = copy(idx_dropout_layers)
                 
                 # get output with targeted dropout
-                out_high = [net.forward_eigenvector_dropout(images, evecs, [drop[idx, :] for drop in drop_high], drop_layer)[0]
-                            for idx, (net, evecs) in enumerate(zip(nets, eigenvectors))]
-                out_low = [net.forward_eigenvector_dropout(images, evecs, [drop[idx, :] for drop in drop_low], drop_layer)[0]
-                            for idx, (net, evecs) in enumerate(zip(nets, eigenvectors))]
-                out_rand = [net.forward_eigenvector_dropout(images, evecs, [drop[idx, :] for drop in drop_rand], drop_layer)[0]
-                            for idx, (net, evecs) in enumerate(zip(nets, eigenvectors))]
+                out_high = [net.forward_eigenvector_dropout(images, evals, evecs, [drop[idx, :] for drop in drop_high], drop_layer)[0]
+                            for idx, (net, evals, evecs) in enumerate(zip(nets, eigenvalues, eigenvectors))]
+                out_low = [net.forward_eigenvector_dropout(images, evals, evecs, [drop[idx, :] for drop in drop_low], drop_layer)[0]
+                            for idx, (net, evals, evecs) in enumerate(zip(nets, eigenvalues, eigenvectors))]
+                out_rand = [net.forward_eigenvector_dropout(images, evals, evecs, [drop[idx, :] for drop in drop_rand], drop_layer)[0]
+                            for idx, (net, evals, evecs) in enumerate(zip(nets, eigenvalues, eigenvectors))]
                 
                 # get loss with targeted dropout
                 loss_high = [dataset.measure_loss(out, labels).item() for out in out_high]
