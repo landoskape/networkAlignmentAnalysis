@@ -29,6 +29,7 @@ from functools import partial
 # requirements in any layer's metaparameters
 REGISTRY_REQUIREMENTS = [
     'name', 
+    'layer_index',
     'layer_handle', 
     'alignment_method', 
     'correlation_method', 
@@ -41,6 +42,7 @@ REGISTRY_REQUIREMENTS = [
 LAYER_REGISTRY = {
     nn.Linear: {
         'name': 'linear', 
+        'layer_index': None,
         'layer_handle': lambda layer:layer, 
         'alignment_method': utils.alignment_linear,
         'correlation_method': utils.correlation_linear,
@@ -51,6 +53,7 @@ LAYER_REGISTRY = {
 
     nn.Conv2d: {
         'name': 'conv2d', 
+        'layer_index': None, 
         'layer_handle': lambda layer:layer, 
         'alignment_method': utils.alignment_convolutional,
         'correlation_method': utils.correlation_convolutional,
@@ -65,6 +68,7 @@ def default_metaprms_ignore(name):
     """convenience method for named metaparameters to be ignored"""
     metaparameters = {
         'name': name,
+        'layer_index': None,
         'layer_handle': None,
         'alignment_method': None,
         'correlation_method': None, 
@@ -78,6 +82,7 @@ def default_metaprms_linear(index, name='linear', flag=False):
     """convenience method for named metaparameters in a linear layer packaged in a sequential"""
     metaparameters = {
         'name': name,
+        'layer_index': index,
         'layer_handle': lambda layer: layer[index],
         'alignment_method': utils.alignment_linear,
         'correlation_method': utils.correlation_linear,
@@ -93,6 +98,7 @@ def default_metaprms_conv2d(index, name='conv2d', by_stride=True, flag=True):
     correlation_method = partial(utils.correlation_convolutional, by_stride=by_stride)
     metaparameters = {
         'name': name,
+        'layer_index': index,
         'layer_handle': lambda layer: layer[index],
         'alignment_method': alignment_method,
         'correlation_method': correlation_method,
