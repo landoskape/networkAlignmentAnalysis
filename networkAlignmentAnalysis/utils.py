@@ -2,6 +2,8 @@ from typing import List
 from contextlib import contextmanager
 from functools import wraps
 import numpy as np
+from scipy.linalg import null_space
+from sklearn.decomposition import IncrementalPCA
 import torch
 from matplotlib import pyplot as plt
 from torchvision import transforms
@@ -151,6 +153,52 @@ def batch_cov(input, centered=True):
         bcov = bcov.squeeze(0) 
 
     return bcov
+
+def sklearn_pca(input, use_rank=True):
+    """
+    sklearn incrementalPCA algorithm serving as a replacement for eigh when it fails
+    
+    input should be a tensor with shape (num_samples, num_features) or it can be a 
+    covariance matrix with (num_features, num_features)
+
+    if use_rank=True, will set num_components to the rank of input and then fill out the
+    rest of the components with random orthogonal components in the null space of the true
+    components and set the eigenvalues to 0
+
+    if use_rank=False, will attempt to fit all the components
+
+    returns w, v where w is eigenvalues and v is eigenvectors sorted from highest to lowest
+    """
+    # dimension
+    num_samples, num_features = input.shape
+
+    # measure rank (or set to None)
+    rank = int(torch.linalg.matrix_rank(input)) if use_rank else None
+
+    # create and fit IncrementalPCA object on input data
+    ipca = IncrementalPCA(n_components=rank).fit(input)
+
+    # eigenvectors are the components
+    v = ipca.components_
+
+    # eigenvalues are the scaled singular values
+    w = ipca.singular_values_**2 / num_samples
+
+    # if v is a subspace of input (e.g. not a full basis, fill it out)
+    if v.shape[0] < num_features:
+        msg = "adding this because I think it should always be true, and if not I want to find out"
+        assert w.shape[0] == v.shape[0], msg
+        v_kernel = null_space(v).T
+        v = np.vstack((v, v_kernel))
+        w = np.concatenate((w, np.zeros(v_kernel.shape[0])))
+    
+    return torch.tensor(w, dtype=torch.float), torch.tensor(v, dtype=torch.float).T
+
+
+
+
+
+    
 
 def alignment(input, weight, method='alignment'):
     """
