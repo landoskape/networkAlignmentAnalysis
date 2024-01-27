@@ -65,8 +65,7 @@ class CNN2P2(AlignmentNetwork):
                    stride=[1, 1],
                    padding=[2, 2],
                    num_hidden=[3136, 128],
-                   dropout=0.5, 
-                   by_stride=True, 
+                   dropout=0.5,
                    flag=True):
         """architecture definition"""
 
@@ -96,14 +95,13 @@ class CNN2P2(AlignmentNetwork):
             nn.Linear(num_hidden[1], output_dim),
             )
 
-        self.register_layer(layer1, **default_metaprms_conv2d(0, by_stride=by_stride, flag=flag))
-        self.register_layer(layer2, **default_metaprms_conv2d(0, by_stride=by_stride, flag=flag))
+        self.register_layer(layer1, **default_metaprms_conv2d(0, flag=flag))
+        self.register_layer(layer2, **default_metaprms_conv2d(0, flag=flag))
         self.register_layer(layer3, **default_metaprms_linear(1))
         self.register_layer(layer4, **default_metaprms_linear(1))
 
         # add these parameters as attributes for easy lookup later
         self.dropout = dropout
-        self.by_stride = by_stride
 
     def get_transform_parameters(self, dataset):
         """CNN2P2 specific transformations for each dataset"""
@@ -160,7 +158,7 @@ class AlexNet(AlignmentNetwork):
       )
     )
     """
-    def initialize(self, dropout=0.5, num_classes=1000, weights=None, by_stride=True):
+    def initialize(self, dropout=0.5, num_classes=1000, weights=None, flag=True):
         """architecture definition"""
 
         # start by loading the architecture of alexnet along with pretrained weights (if requested)
@@ -187,18 +185,17 @@ class AlexNet(AlignmentNetwork):
         layer7 = nn.Sequential(alexnet.classifier[3], alexnet.classifier[4], alexnet.classifier[5])
         layer8 = nn.Sequential(output_layer)
         
-        self.register_layer(layer1, **default_metaprms_conv2d(0, by_stride=by_stride))
-        self.register_layer(layer2, **default_metaprms_conv2d(0, by_stride=by_stride))
-        self.register_layer(layer3, **default_metaprms_conv2d(0, by_stride=by_stride))
-        self.register_layer(layer4, **default_metaprms_conv2d(0, by_stride=by_stride))
-        self.register_layer(layer5, **default_metaprms_conv2d(0, by_stride=by_stride))
+        self.register_layer(layer1, **default_metaprms_conv2d(0, flag=flag))
+        self.register_layer(layer2, **default_metaprms_conv2d(0, flag=flag))
+        self.register_layer(layer3, **default_metaprms_conv2d(0, flag=flag))
+        self.register_layer(layer4, **default_metaprms_conv2d(0, flag=flag))
+        self.register_layer(layer5, **default_metaprms_conv2d(0, flag=flag))
         self.register_layer(layer6, **default_metaprms_linear(1))
         self.register_layer(layer7, **default_metaprms_linear(1))
         self.register_layer(layer8, **default_metaprms_linear(0))
 
         # add these parameters as attributes for easy lookup later
         self.dropout = dropout
-        self.by_stride = by_stride
 
         # set dropout with general method so we can easily use each alexnet.features/classifier/etc
         self.set_dropout(dropout)

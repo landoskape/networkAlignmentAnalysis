@@ -339,20 +339,20 @@ class AlignmentNetwork(nn.Module, ABC):
         return delta_weights
     
     @torch.no_grad()
-    def measure_alignment(self, x, precomputed=False, method='alignment'):
+    def measure_alignment(self, x, precomputed=False, method='alignment', by_stride=True):
         # Pre-layer activations start with input (x) and ignore output
         layer_inputs = self.get_layer_inputs(x, precomputed=precomputed)
         alignment = []
         for input, layer, metaprms in zip(layer_inputs, self.get_alignment_layers(), self.get_alignment_metaparameters()):
-            alignment.append(metaprms['alignment_method'](input, layer, method=method))
+            alignment.append(metaprms['alignment_method'](input, layer, method=method, by_stride=by_stride))
         return alignment
     
     @torch.no_grad()
-    def measure_correlation(self, x, precomputed=False, method='corr', reduced=True):
+    def measure_correlation(self, x, precomputed=False, method='corr', by_stride=True, reduced=True):
         correlation = []
         zipped = zip(self.get_layer_outputs(x=x, precomputed=precomputed), self.get_alignment_metaparameters())
         for activation, metaprms in zipped:
-            ccorr = metaprms['correlation_method'](activation, method=method)
+            ccorr = metaprms['correlation_method'](activation, method=method, by_stride=by_stride)
             if reduced:
                 ccorr = torch.mean(torch.abs(ccorr))
             correlation.append(ccorr)

@@ -92,16 +92,14 @@ def default_metaprms_linear(index, name='linear', flag=False):
     }
     return metaparameters
 
-def default_metaprms_conv2d(index, name='conv2d', by_stride=True, flag=True):
+def default_metaprms_conv2d(index, name='conv2d', flag=True):
     """convenience method for named metaparameters in a conv2d layer packaged in a sequential"""
-    alignment_method = partial(utils.alignment_convolutional, by_stride=by_stride)
-    correlation_method = partial(utils.correlation_convolutional, by_stride=by_stride)
     metaparameters = {
         'name': name,
         'layer_index': index,
         'layer_handle': lambda layer: layer[index],
-        'alignment_method': alignment_method,
-        'correlation_method': correlation_method,
+        'alignment_method': utils.alignment_convolutional,
+        'correlation_method': utils.correlation_convolutional,
         'unfold': True, 
         'ignore': False,
         'flag': flag,

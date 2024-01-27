@@ -195,11 +195,7 @@ def sklearn_pca(input, use_rank=True):
     return torch.tensor(w, dtype=torch.float), torch.tensor(v, dtype=torch.float).T
 
 
-
-
-
-    
-
+# ------------------ alignment functions ----------------------
 def alignment(input, weight, method='alignment'):
     """
     measure alignment (proportion variance explained) between **input** and **weight**
@@ -239,12 +235,12 @@ def alignment(input, weight, method='alignment'):
     return rq/torch.trace(cc)
 
 
-def alignment_linear(activity, layer, method='alignment'):
-    """wrapper for alignment of linear layer"""
+def alignment_linear(activity, layer, method='alignment', **kwargs):
+    """wrapper for alignment of linear layer, kwargs for compatibility"""
     return alignment(activity, layer.weight.data, method=method)
 
 
-def alignment_convolutional(activity, layer, by_stride=True, method='alignment'):
+def alignment_convolutional(activity, layer, by_stride=True, method='alignment', **kwargs):
     """
     wrapper for alignment of convolutional layer (for conv2d)
 
@@ -257,6 +253,8 @@ def alignment_convolutional(activity, layer, by_stride=True, method='alignment')
     taken where the weights are the variance in the data at that stride. This way,
     the output is a (num_output_channels, ) shaped tensor regardless of the setting
     used for by_stride.
+
+    **kwargs is just for compatibility and accepting irrelevant arguments without breaking
     """
     h_max, w_max = get_maximum_strides(activity.shape[2], activity.shape[3], layer)
     if by_stride:
@@ -308,6 +306,12 @@ def correlation(output, method='corr'):
 
     Returns: 
     Pairwise variance or correlation coefficient between neurons across batch dimension
+
+    NOTE:
+    As of now, most models have processing layers after the alignment layer in each
+    registered layer. That means that the data which will be sent to this method is
+    not really the post-alignment layer activations... should change the models before
+    using this correlation method much. 
     """
     if method=='var':
         return torch.cov(output.T)
@@ -316,11 +320,11 @@ def correlation(output, method='corr'):
     else:
         raise ValueError(f"Method ({method}) not recognized, must be 'var' or 'corr'")
 
-def correlation_linear(output, method='corr'):
-    """wrapper for correlation of linear layer"""
+def correlation_linear(output, method='corr', **kwargs):
+    """wrapper for correlation of linear layer, kwargs for compatibility"""
     return correlation(output, method=method)
 
-def correlation_convolutional(output, method='corr', by_stride=False):
+def correlation_convolutional(output, method='corr', by_stride=False, **kwargs):
     """
     wrapper for correlation of convolutional layer (conv2d)
     
@@ -339,6 +343,8 @@ def correlation_convolutional(output, method='corr', by_stride=False):
     channel variance is used rather than the across channel variance. We should think
     about that and make a better decision, or potentially created an option for doing
     it either way depending on the scientific goal.
+
+    kwargs for compatibility
     """
     if by_stride:
         num_channels, h_max, w_max = output.size(1), output.size(2), output.size(3)
