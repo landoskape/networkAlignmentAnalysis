@@ -1,13 +1,14 @@
-from abc import ABC, abstractmethod 
-import torch
-from torch import nn
-import torchvision 
-from torchvision import transforms
 import multiprocessing
+from abc import ABC, abstractmethod
+
+import numpy as np
+import torch
+import torchvision
+from torch import nn
+from torchvision import transforms
 
 from . import files
 from .models.base import AlignmentNetwork
-
 
 REQUIRED_PROPERTIES = ['dataset_path', 'dataset_constructor', 'loss_function']
 
@@ -32,7 +33,7 @@ class DataSet(ABC):
         self.check_properties() 
 
         # define device for dataloading
-        self.device = device if device is not None else 'cuda' if torch.cuda.is_available() else 'cpu'
+        self.device = device if device is not None else ('cuda' if torch.cuda.is_available() else 'cpu')
 
         # define extra transform (should be a callable method or None) for any transformations that 
         # can't go in the torchvision.transforms.Compose(...), hopefully this won't be needed later 

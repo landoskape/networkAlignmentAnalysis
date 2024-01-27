@@ -1,15 +1,15 @@
-import numpy as np
-from tqdm import tqdm
-import torch
-
-from matplotlib import pyplot as plt
 import matplotlib as mpl
+import numpy as np
+import torch
+from matplotlib import pyplot as plt
+from tqdm import tqdm
 
-from .experiment import Experiment
-from ..models.registry import get_model
-from ..datasets import get_dataset
 from .. import train
 from ..utils import compute_stats_by_type, transpose_list, named_transpose, rms
+from ..datasets import get_dataset
+from ..models.registry import get_model
+from .experiment import Experiment
+
 
 class AlignmentStatistics(Experiment):
     def get_basename(self):
@@ -27,6 +27,8 @@ class AlignmentStatistics(Experiment):
         parser.add_argument('--network', type=str, default='MLP') # what base network architecture to use
         parser.add_argument('--dataset', type=str, default='MNIST') # what dataset to use
         parser.add_argument('--optimizer', type=str, default='Adam') # what optimizer to train with
+        parser.add_argument('--batch_size', type=int, default=1024) # batch size to pass to DataLoader
+
 
         # default parameters
         parser.add_argument('--default-lr', type=float, default=1e-3) # default learning rate
@@ -42,6 +44,7 @@ class AlignmentStatistics(Experiment):
         parser.add_argument('--epochs', type=int, default=100) # how many rounds of training to do
         parser.add_argument('--replicates', type=int, default=5) # how many copies of identical networks to train
         parser.add_argument('--use-flag', default=False, action='store_true', help='if used, will include flagged layers in analyses')
+        parser.add_argument('--avg_corr', default=True, action='store_false', help='if used will not do the avg_corr methods') 
 
         # return parser
         return parser
@@ -61,6 +64,7 @@ class AlignmentStatistics(Experiment):
         dataset = get_dataset(self.args.dataset,
                               build=True,
                               transform_parameters=nets[0],
+                              loader_parameters={'batch_size': self.args.batch_size},
                               device=self.args.device)
 
         # train networks
@@ -142,14 +146,20 @@ class AlignmentStatistics(Experiment):
             optim = torch.optim.SGD
         else:
             raise ValueError(f"optimizer ({self.args.optimizer}) not recognized")
+
+        # get network
+        model_kwargs = dict(
+            dataset=self.args.dataset,
+            dropout=self.args.default_dropout,
+            ignore_flag=not(self.args.ignore_flag),
+        )
         
-        nets = [get_model(self.args.network, 
-                          build=True, 
-                          dataset=self.args.dataset, 
-                          dropout=self.args.default_dropout, 
-                          ignore_flag=not(self.args.use_flag))
+        if self.args.network == 'AlexNet' and self.args.dataset == 'MNIST':
+            model_kwargs['num_classes'] = 10
+
+        nets = [get_model(self.args.network, build=True, **model_kwargs)
                 for _ in range(self.args.replicates)]
-        
+
         nets = [net.to(self.device) for net in nets]
         
         optimizers = [optim(net.parameters(), 
@@ -168,9 +178,12 @@ class AlignmentStatistics(Experiment):
             num_epochs=self.args.epochs,
             alignment=True,
             delta_weights=True,
-            average_correlation=True, 
+            average_correlation=self.args.avg_corr,
             full_correlation=False,
         )
+
+        # if self.args.network == 'AlexNet':
+        #     parameters['average_correlation'] = False
 
         print('training networks...')
         train_results = train.train(nets, optimizers, dataset, **parameters)

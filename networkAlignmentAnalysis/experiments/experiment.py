@@ -1,15 +1,16 @@
+from abc import ABC, abstractmethod
+from argparse import ArgumentParser
 from datetime import datetime
 from pathlib import Path
-from argparse import ArgumentParser
-from abc import ABC, abstractmethod 
-from typing import Tuple, Dict, List
-from torch import load, save
-from matplotlib.pyplot import savefig, show
+from typing import Dict, List, Tuple
 
-from torch.nn import Module as TorchModule
+from matplotlib.pyplot import savefig, show
+from torch import load, save
 from torch.cuda import is_available as cuda_available
+from torch.nn import Module as TorchModule
 
 from .. import files
+
 
 class Experiment(ABC):
     def __init__(self, args=None) -> None:
@@ -141,7 +142,7 @@ class Experiment(ABC):
 
         # manage device
         if self.args.device is None:
-            self.args.device = 'cuda' if cuda_available else 'cpu'
+            self.args.device = 'cuda' if cuda_available() else 'cpu'
 
         # do checks
         if self.args.use_timestamp and self.args.justplot:
