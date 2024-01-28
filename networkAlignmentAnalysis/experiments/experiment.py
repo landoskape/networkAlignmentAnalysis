@@ -225,17 +225,6 @@ class Experiment(ABC):
             cname = name + f"{idx}"
             save(net, self.get_network_path(cname))
 
-    def save_checkpoints(self, nets, optimizers, results):
-        """
-        Method for saving checkpoints for networks throughout training.
-        """
-        multi_model_ckpt = {f'model_state_dict_{i}': net.state_dict()
-                            for i, net in enumerate(nets)}
-        multi_optimizer_ckpt = {f'optimizer_state_dict_{i}': opt.state_dict()
-                                for i, opt in enumerate(optimizers)}
-        checkpoint = results | multi_model_ckpt | multi_optimizer_ckpt
-        save(checkpoint, self.get_checkpoint_path())
-
     def load_checkpoints(self, nets, optimizers, device):
         """
         Method for loading presaved checkpoint during training.
@@ -253,10 +242,13 @@ class Experiment(ABC):
         if (orig_device == 'cuda') & (device == 'cpu'):
             [net.load_state_dict(checkpoint.pop(net_id), map_location=device)
              for net, net_id in zip(nets, net_ids)]
-        elif device == 'cuda':
-            [net.load_state_dict(checkpoint.pop(net_id))
-             for net, net_id in zip(nets, net_ids)]
+
+        [net.load_state_dict(checkpoint.pop(net_id))
+        for net, net_id in zip(nets, net_ids)]
+
+        if device == 'cuda':
             [net.to(device) for net in nets]
+
         [opt.load_state_dict(checkpoint.pop(opt_id))
          for opt, opt_id in zip(optimizers, opt_ids)]
 

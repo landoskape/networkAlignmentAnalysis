@@ -90,7 +90,7 @@ class AlignmentStatistics(Experiment):
             eigvals.append(eigenfeatures[1])
             eigvecs.append(eigenfeatures[2])
             class_betas.append(beta_by_class)
-        
+
         # we don't actually use the eigvecs for anything right now, eigvecs=eigvecs)    
         eigen_results = dict(beta=beta, eigvals=eigvals, class_betas=class_betas, class_names=dataset.test_loader.dataset.classes) 
 
@@ -161,6 +161,7 @@ class AlignmentStatistics(Experiment):
             [net.train() for net in nets]
             parameters['num_complete'] = results['epoch'] + 1
             parameters['results'] = results
+            print('loaded networks from previous checkpoint')
 
         if self.args.save_ckpts:
             parameters['save_checkpoints'] = (True, 1, self.get_checkpoint_path(), self.args.device)
