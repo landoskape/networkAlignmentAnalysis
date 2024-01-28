@@ -31,8 +31,8 @@ def train(nets, optimizers, dataset, **parameters):
     results = parameters.get('results', False)
     num_complete = parameters.get('num_complete', 0)
     save_ckpt, freq_ckpt, path_ckpt, dev = parameters.get('save_checkpoints', (False, 1, '', ''))
-
     if not results:
+        print('initializing new results dictionary')
         # initialize dictionary for storing performance across epochs
         results = {'loss': torch.zeros((num_steps, num_nets)),
                    'accuracy': torch.zeros((num_steps, num_nets))}
@@ -53,6 +53,16 @@ def train(nets, optimizers, dataset, **parameters):
         # measure full correlation for each layer
         if measure_fullcorr:
             results['fullcorr'] = []
+
+    # If loaded from checkpoint but running more epochs than initialized for.
+    elif results['loss'].shape[0] < num_steps:
+        add_steps = num_steps - results['loss'].shape[0]
+        assert (add_steps / (parameters['num_epochs'] - num_complete)) == len(dataset.train_loader), (
+            'Number of new steps needs to multiple of epochs and num minibatches')
+        results['loss'] = torch.vstack((results['loss'],
+                                        torch.zeros((add_steps, num_nets))))
+        results['accuracy'] = torch.vstack((results['accuracy'],
+                                            torch.zeros((add_steps, num_nets))))
 
     if num_complete > 0: print('resuming training from checkpoint on epoch', num_complete)
 
