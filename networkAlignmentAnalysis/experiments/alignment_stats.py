@@ -51,7 +51,6 @@ class AlignmentStatistics(Experiment):
         parser.add_argument('--epochs', type=int, default=100, help='how many epochs to train the networks on')
         parser.add_argument('--replicates', type=int, default=5, help='how many replicates of networks to train') 
         parser.add_argument('--ignore-flag', default=False, action='store_true', help='if used, will omit flagged layers in analyses')
-        parser.add_argument('--avg-corr', default=True, action='store_false', help='if used will not do the avg_corr methods') 
         parser.add_argument('--by-stride', default=True, type=str2bool, help='whether or not to analyze convolutional layers by stride')
 
         # checkpointing parameters
@@ -190,7 +189,7 @@ class AlignmentStatistics(Experiment):
                                                          self.get_checkpoint_path())
             for net in nets:
                 net.train()
-                
+
             parameters['num_complete'] = results['epoch'] + 1
             parameters['results'] = results
             print('loaded networks from previous checkpoint')
