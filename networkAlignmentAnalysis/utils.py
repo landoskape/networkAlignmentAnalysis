@@ -256,29 +256,28 @@ def alignment_convolutional(activity, layer, by_stride=True, method='alignment',
 
     **kwargs is just for compatibility and accepting irrelevant arguments without breaking
     """
-    h_max, w_max = get_maximum_strides(activity.shape[2], activity.shape[3], layer)
+    layer_prms = get_unfold_params(layer)
+    unfolded_input = torch.nn.functional.unfold(activity, layer.kernel_size, **layer_prms)
     if by_stride:
-        preprocess = transforms.Pad(layer.padding)
-        processed_activity = preprocess(activity)
-        num_looks = h_max * w_max
-        num_channels = layer.out_channels
-        w_idx, h_idx = torch.meshgrid(torch.arange(0, layer.kernel_size[0]), torch.arange(0, layer.kernel_size[1]), indexing='xy')
-        align_layer = torch.zeros((num_channels, num_looks))
-        variance_stride = torch.zeros(num_looks)
-        for h in range(h_max):
-            for w in range(w_max):
-                out_tuple = alignment_conv_look(processed_activity, layer, (h, w), (h_idx, w_idx), method=method)
-                align_layer[:, w + h_max*h], variance_stride[w + h_max*h] = out_tuple
-        
-        # weighted average over variance_stride...
-        align = torch.sum(align_layer * variance_stride.view(1, -1)) / torch.sum(variance_stride)
-        return align
+        # get average variance of each stride
+        variance_stride = torch.mean(torch.var(unfolded_input, dim=1), dim=0)
+        # get weights of layer
+        weight = layer.weight.data
+        # get alignment for each channel on each stride
+        align_stride = torch.stack([alignment(unfolded_input[:, :, i], weight.view(weight.size(0), -1), method=method) for i in range(unfolded_input.size(2))], dim=1)
+        # return weighted average, weighting by variance on each stride (ignoring nans in case any strides have no variance)
+        return weighted_average(align_stride, variance_stride.view(1, -1), 1, ignore_nan=True)
+
     else:
-        layer_prms = get_unfold_params(layer)
-        unfolded_input = torch.nn.functional.unfold(activity, layer.kernel_size, **layer_prms)
+        # get the number of strides
+        h_max, w_max = get_maximum_strides(activity.shape[2], activity.shape[3], layer)
+        # reshape for (batch, full_conv_dim)
         unfolded_input = unfolded_input.transpose(1, 2).reshape(activity.size(0), -1)
+        # shape weight appropriately (repeat across strides)
         unfolded_weight = layer.weight.data.view(layer.weight.size(0), -1).repeat(1, h_max*w_max)
+        # return alignment
         return alignment(unfolded_input, unfolded_weight, method=method)
+
 
 def alignment_conv_look(processed_activity, layer, stride, grid, method='alignment'):
     # Take (NI, C, H, W) (preprocessed) input activity
@@ -473,72 +472,43 @@ def compute_stats_by_type(tensor, num_types, dim, method='var'):
 
     return type_means, type_dev
 
-def weighted_average(data, weights, dim, keepdim=False):
+def weighted_average(data, weights, dim, keepdim=False, ignore_nan=False):
     """
     take the weighted average of **data** on a certain dimension with **weights**
 
-    weights should be a nonnegative vector with the same size as data.size(dim)
-    uses the standard formula:
-    avg = data_i * weight_i
+    weights should be a nonnegative vector that broadcasts into data
+    avg = sum_i(data_i * weight_i, dim) / sum_i(weight_i, dim)
+
+    if ignore_nan=True, (default=False), will ignore nans in weighted average
     """
-    assert weights.ndim==1, "weights must be a 1-d tensor"
-    data_ndim = data.ndim
-    weight_dim = weights.size(0)
-    new_view = [weight_dim if ii==dim else 1 for ii in range(data_ndim)]
-    weights = weights.view(new_view)
-    numerator = torch.sum(data * weights, dim=dim, keepdim=keepdim)
-    denominator = torch.sum(weights, dim=dim, keepdim=keepdim)
+    assert data.ndim == weights.ndim, "data and weights must have same number of dimensions"
+    assert torch.all(weights[~torch.isnan(weights)]>=0), "weights must be nonnegative"
+    
+    for d in (dim if check_iterable(dim) else [dim]):
+        assert data.size(d) == weights.size(d), f"data and weights must have same size in averaging dimensions (data.size({d})={data.size(d)}, (weight.size({d})={weights.size(d)}))"
+    
+    # use normal sum if not ignore nan, otherwise use nansum
+    sum = torch.nansum if ignore_nan else torch.sum
+    
+    # make sure nans are in the same place in weights and data for accurate division by total weight
+    if ignore_nan:
+        weights = weights.expand(data.size())
+        weights = torch.masked_fill(weights, torch.isnan(data), torch.nan)
+
+    # numerator & denominator of weighted average
+    numerator = sum(data * weights, dim=dim, keepdim=keepdim)
+    denominator = sum(weights, dim=dim, keepdim=keepdim)
+
+    # return weighted average
     return numerator / denominator
 
-def plot_rf(rf, width, alignment=None, alignBounds=None, showRFs=None, figSize=5):
-    if showRFs is not None: 
-        rf = rf.reshape(rf.shape[0], -1)
-        idxRandom = np.random.choice(range(rf.shape[0]),showRFs,replace=False)
-        rf = rf[idxRandom,:]
-    else: 
-        showRFs = rf.shape[0]
-    # normalize
-    rf = rf.T / np.abs(rf).max(axis=1)
-    rf = rf.T
-    rf = rf.reshape(showRFs, width, width)
-    # If necessary, create colormap
-    if alignment is not None:
-        cmap = cm.get_cmap('rainbow', rf.shape[0])
-        cmapPeak = lambda x : cmap(x)
-        if alignBounds is not None:
-            alignment = alignment - alignBounds[0]
-            alignment = alignment / (alignBounds[1] - alignBounds[0])
-        else:
-            alignment = (alignment - alignment.min())
-            alignment = alignment / alignment.max()
-        
-    # plotting
-    n = int(np.ceil(np.sqrt(rf.shape[0])))
-    fig, axes = plt.subplots(nrows=n, ncols=n, sharex=True, sharey=True)
-    fig.set_size_inches(figSize,figSize)
-    
-    N = 1000
-    for i in tqdm(range(rf.shape[0])):
-        ax = axes[i // n][i % n]
-        if alignment is not None:
-            vals = np.ones((N, 4))
-            cAlignment = alignment[i].numpy()
-            cPeak = cmapPeak(alignment[i].numpy())
-            vals[:, 0] = np.linspace(0, cPeak[0], N)
-            vals[:, 1] = np.linspace(0, cPeak[1], N)
-            vals[:, 2] = np.linspace(0, cPeak[2], N)
-            usecmap = ListedColormap(vals)
-            ax.imshow(rf[i], cmap=usecmap, vmin=-1, vmax=1)
-        else:
-            ax.imshow(rf[i], cmap='gray', vmin=-1, vmax=1)
-        ax.set_xticks([])
-        ax.set_yticks([])
-        ax.set_aspect('equal')
-    for j in range(rf.shape[0], n * n):
-        ax = axes[j // n][j % n]
-        ax.imshow(np.ones_like(rf[0]) * -1, cmap='gray', vmin=-1, vmax=1)
-        ax.set_xticks([])
-        ax.set_yticks([])
-        ax.set_aspect('equal')
-    fig.subplots_adjust(wspace=0.0, hspace=0.0)
-    return fig
+
+def str2bool(str):
+    if isinstance(str, bool):
+        return str
+    if str.lower() in ('true', '1'):
+        return True
+    elif str.lower() in ('false', '0'):
+        return False
+    else:
+        raise TypeError("Boolean type expected")
