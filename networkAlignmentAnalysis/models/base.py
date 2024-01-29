@@ -608,9 +608,15 @@ class AlignmentNetwork(nn.Module, ABC):
 
         # measure the contribution of each eigenvector on the representation of each input
         beta_activity = []
+        inputs = self._preprocess_inputs(inputs, by_stride=by_stride)
         zipped = zip(inputs, eigenvectors, self.get_alignment_layers(), self.get_alignment_metaparameters())
         for input, evec, layer, metaprm in zipped:
             if by_stride and metaprm['unfold']:
+                stride_var = torch.var(input, dim=1, keepdim=True)
+                projection = torch.matmul(evec.T, input)
+                projection = weighted_average(projection, stride_var, dim=2)
+                beta_activity.append(projection.T.unsqueeze(0))
+            else:
                 beta_activity.append((input @ evec).T.unsqueeze(0))
 
         # organize activity by class in extra dimension
@@ -664,17 +670,10 @@ class AlignmentNetwork(nn.Module, ABC):
 
                 # measure eigenvalues and eigenvectors
                 w, v = named_transpose([self._eigendecomposition(bc, use_rank=True) for bc in bcov])
-                
-                # only keep strides when they have valid eigendecompositions
-                keep_index = []
-                for ii, ww in enumerate(w):
-                    if ww is not None:
-                        keep_index.append(ii) # add to keep index
 
-                # only keep valid strides
-                w = torch.stack([w[ii] for ii in keep_index])
-                v = torch.stack([v[ii] for ii in keep_index])
-                bvar = torch.stack([bvar[ii] for ii in keep_index])
+                # stack 
+                w = torch.stack(w)
+                v = torch.stack(v)
 
                 # Measure abs value of dot product of weights on eigenvectors for each layer
                 num_strides = v.size(0)
@@ -682,9 +681,9 @@ class AlignmentNetwork(nn.Module, ABC):
                 b = torch.bmm(weight.cpu().unsqueeze(0).expand(num_strides, -1, -1), v)
 
                 # Contract across strides by weighted average of average variance per stride
-                b_weighted_by_var = weighted_average(b, bvar, 0)
-                w_weighted_by_var = weighted_average(w, bvar, 0)
-                v_weighted_by_var = weighted_average(v, bvar, 0)
+                b_weighted_by_var = weighted_average(b, bvar.view(-1, 1, 1), 0)
+                w_weighted_by_var = weighted_average(w, bvar.view(-1, 1), 0)
+                v_weighted_by_var = weighted_average(v, bvar.view(-1, 1, 1), 0)
 
                 # Append to output
                 beta.append(b_weighted_by_var)
