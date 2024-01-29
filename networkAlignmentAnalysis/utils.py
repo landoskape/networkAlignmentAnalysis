@@ -412,25 +412,24 @@ def load_checkpoints(nets, optimizers, device, path):
     Method for loading presaved checkpoint during training.
     TODO: device handling for passing between gpu/cpu
     """
-    checkpoint = torch.load(path)
+
+    if device == 'cpu':
+        checkpoint = torch.load(path, map_location=device)
+    elif device == 'cuda':
+        checkpoint = torch.load(path)
+
     net_ids = sorted([key for key in checkpoint if key.startswith('model_state_dict')])
     opt_ids = sorted([key for key in checkpoint if key.startswith('optimizer_state_dict')])
     assert all([oi.split('_')[-1] == ni.split('_')[-1] for oi, ni in zip(opt_ids, net_ids)]), (
         'nets and optimizers cannot be matched up from checkpoint'
     )
 
-    orig_device = checkpoint['device']
-    if (orig_device == 'cuda') & (device == 'cpu'):
-        [net.load_state_dict(checkpoint.pop(net_id), map_location=device)
-            for net, net_id in zip(nets, net_ids)]
-
     [net.load_state_dict(checkpoint.pop(net_id))
         for net, net_id in zip(nets, net_ids)]
+    [opt.load_state_dict(checkpoint.pop(opt_id))
+        for opt, opt_id in zip(optimizers, opt_ids)]
 
     if device == 'cuda':
         [net.to(device) for net in nets]
-
-    [opt.load_state_dict(checkpoint.pop(opt_id))
-        for opt, opt_id in zip(optimizers, opt_ids)]
 
     return nets, optimizers, checkpoint
