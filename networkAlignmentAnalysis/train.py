@@ -3,8 +3,8 @@ import time
 import torch
 from tqdm import tqdm
 
-from networkAlignmentAnalysis.utils import (condense_values, transpose_list,
-                                            value_by_layer)
+from networkAlignmentAnalysis.utils import (condense_values, save_checkpoint,
+                                            transpose_list, value_by_layer)
 
 
 def train(nets, optimizers, dataset, **parameters):
@@ -315,14 +315,3 @@ def progressive_dropout(nets, dataset, alignment=None, **parameters):
 
     return results
 
-
-def save_checkpoint(nets, optimizers, results, path):
-    """
-    Method for saving checkpoints for networks throughout training.
-    """
-    multi_model_ckpt = {f'model_state_dict_{i}': net.state_dict()
-                        for i, net in enumerate(nets)}
-    multi_optimizer_ckpt = {f'optimizer_state_dict_{i}': opt.state_dict()
-                            for i, opt in enumerate(optimizers)}
-    checkpoint = results | multi_model_ckpt | multi_optimizer_ckpt
-    torch.save(checkpoint, path)

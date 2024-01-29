@@ -24,7 +24,6 @@ def default_loader_parameters(batch_size=1024, num_workers=2, shuffle=True, pin_
         pin_memory=pin_memory,
         persistent_workers=persistent_workers,
     )
-    print(f'{num_workers = }')
 
     return default_parameters
 

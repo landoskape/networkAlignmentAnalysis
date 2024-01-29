@@ -9,7 +9,8 @@ from tqdm import tqdm
 from .. import train
 from ..datasets import get_dataset
 from ..models.registry import get_model
-from ..utils import compute_stats_by_type, named_transpose, rms, transpose_list
+from ..utils import (compute_stats_by_type, load_checkpoints, named_transpose,
+                     rms, transpose_list)
 from .experiment import Experiment
 
 
@@ -157,7 +158,10 @@ class AlignmentStatistics(Experiment):
         )
 
         if self.args.use_prev & os.path.isfile(self.get_checkpoint_path()):
-            nets, optimizers, results = self.load_checkpoints(nets, optimizers, self.args.device)
+            nets, optimizers, results = load_checkpoints(nets,
+                                                         optimizers,
+                                                         self.args.device,
+                                                         self.get_checkpoint_path())
             [net.train() for net in nets]
             parameters['num_complete'] = results['epoch'] + 1
             parameters['results'] = results
