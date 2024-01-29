@@ -512,3 +512,43 @@ def str2bool(str):
         return False
     else:
         raise TypeError("Boolean type expected")
+
+
+def save_checkpoint(nets, optimizers, results, path):
+    """
+    Method for saving checkpoints for networks throughout training.
+    """
+    multi_model_ckpt = {f'model_state_dict_{i}': net.state_dict()
+                        for i, net in enumerate(nets)}
+    multi_optimizer_ckpt = {f'optimizer_state_dict_{i}': opt.state_dict()
+                            for i, opt in enumerate(optimizers)}
+    checkpoint = results | multi_model_ckpt | multi_optimizer_ckpt
+    torch.save(checkpoint, path)
+
+
+def load_checkpoints(nets, optimizers, device, path):
+    """
+    Method for loading presaved checkpoint during training.
+    TODO: device handling for passing between gpu/cpu
+    """
+
+    if device == 'cpu':
+        checkpoint = torch.load(path, map_location=device)
+    elif device == 'cuda':
+        checkpoint = torch.load(path)
+
+    net_ids = sorted([key for key in checkpoint if key.startswith('model_state_dict')])
+    opt_ids = sorted([key for key in checkpoint if key.startswith('optimizer_state_dict')])
+    assert all([oi.split('_')[-1] == ni.split('_')[-1] for oi, ni in zip(opt_ids, net_ids)]), (
+        'nets and optimizers cannot be matched up from checkpoint'
+    )
+
+    [net.load_state_dict(checkpoint.pop(net_id))
+        for net, net_id in zip(nets, net_ids)]
+    [opt.load_state_dict(checkpoint.pop(opt_id))
+        for opt, opt_id in zip(optimizers, opt_ids)]
+
+    if device == 'cuda':
+        [net.to(device) for net in nets]
+
+    return nets, optimizers, checkpoint

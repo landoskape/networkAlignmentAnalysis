@@ -168,6 +168,10 @@ class Experiment(ABC):
     def get_network_path(self, name):
         """Method for loading path to saved network file"""
         return self.get_dir() / f"{name}.pt"
+    
+    def get_checkpoint_path(self):
+        '''Method for loading path to network checkpoint file'''
+        return self.get_dir() / 'checkpoint.tar'
 
     def _update_args(self, prms):
         """Method for updating arguments from saved parameter dictionary"""
@@ -220,7 +224,7 @@ class Experiment(ABC):
         for idx, net in enumerate(nets):
             cname = name + f"{idx}"
             save(net, self.get_network_path(cname))
-    
+
     @abstractmethod
     def main(self) -> Tuple[Dict, List[TorchModule]]:
         """

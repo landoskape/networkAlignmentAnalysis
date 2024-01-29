@@ -4,7 +4,7 @@ from pathlib import Path
 
 PATH_REGISTRY = {
     'DESKTOP-M2J64J2': Path('C:/Users/andrew/Documents/machineLearning'),
-    'Celias-MBP.lan': Path('/Users/celiaberon/Documents/machine_learning'),
+    'Celia': Path('/Users/celiaberon/Documents/machine_learning'),
     'cberon': Path('/n/home00/cberon/alignment/')
 }
 
@@ -17,6 +17,8 @@ def get_username():
 def local_path():
     """method for defining the local root path for datasets and results"""
     hostname = get_hostname()
+    if hostname.lower().startswith('celia'):
+        hostname = 'Celia'
     hostname = hostname if hostname in PATH_REGISTRY else get_username()
     if hostname not in PATH_REGISTRY:
         raise ValueError(f"hostname ({hostname}) is not registered in the path registry")
@@ -37,3 +39,5 @@ def dataset_path(dataset):
         return data_path()
     elif dataset=='CIFAR10' or dataset=='CIFAR100':
         return data_path()
+    elif dataset=='ImageNet':
+        return Path('/n/holyscratch01/bsabatini_lab/Lab/ImageNet/')

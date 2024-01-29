@@ -1,3 +1,5 @@
+import os
+
 import matplotlib as mpl
 import numpy as np
 import torch
@@ -5,9 +7,15 @@ from matplotlib import pyplot as plt
 from tqdm import tqdm
 
 from .. import train
-from ..utils import compute_stats_by_type, transpose_list, named_transpose, rms, str2bool
 from ..datasets import get_dataset
 from ..models.registry import get_model
+from ..utils import (compute_stats_by_type, 
+                     load_checkpoints, 
+                     named_transpose,
+                     rms, 
+                     transpose_list,
+                     str2bool,
+                     rms)
 from .experiment import Experiment
 
 
@@ -45,7 +53,11 @@ class AlignmentStatistics(Experiment):
         parser.add_argument('--ignore-flag', default=False, action='store_true', help='if used, will omit flagged layers in analyses')
         parser.add_argument('--avg-corr', default=True, action='store_false', help='if used will not do the avg_corr methods') 
         parser.add_argument('--by-stride', default=True, type=str2bool, help='whether or not to analyze convolutional layers by stride')
-        
+
+        # checkpointing parameters
+        parser.add_argument('--use_prev', default=False, action='store_true', help='if used, will pick up training off previous checkpoint')
+        parser.add_argument('--save_ckpts', default=False, action='store_true', help='if used, will save checkpoints of models')
+
         # return parser
         return parser
     
@@ -85,7 +97,7 @@ class AlignmentStatistics(Experiment):
             eigvals.append(eigenfeatures[1])
             eigvecs.append(eigenfeatures[2])
             class_betas.append(beta_by_class)
-        
+
         # we don't actually use the eigvecs for anything right now, eigvecs=eigvecs)    
         eigen_results = dict(beta=beta, eigvals=eigvals, class_betas=class_betas, class_names=dataset.test_loader.dataset.classes) 
 
@@ -145,20 +157,9 @@ class AlignmentStatistics(Experiment):
             optim = torch.optim.SGD
         else:
             raise ValueError(f"optimizer ({self.args.optimizer}) not recognized")
-
-        # get network
-        model_kwargs = dict(
-            dataset=self.args.dataset,
-            dropout=self.args.default_dropout,
-            ignore_flag=self.args.ignore_flag,
-        )
         
-        if self.args.network == 'AlexNet' and self.args.dataset == 'MNIST':
-            model_kwargs['num_classes'] = 10
-
-        nets = [get_model(self.args.network, build=True, **model_kwargs)
+        nets = [get_model(self.args.network, build=True, dataset=self.args.dataset, dropout=self.args.default_dropout, ignore_flag=not(self.args.use_flag))
                 for _ in range(self.args.replicates)]
-
         nets = [net.to(self.device) for net in nets]
         
         optimizers = [optim(net.parameters(), 
@@ -181,6 +182,21 @@ class AlignmentStatistics(Experiment):
             full_correlation=False,
             by_stride=self.args.by_stride,
         )
+
+        if self.args.use_prev & os.path.isfile(self.get_checkpoint_path()):
+            nets, optimizers, results = load_checkpoints(nets,
+                                                         optimizers,
+                                                         self.args.device,
+                                                         self.get_checkpoint_path())
+            for net in nets:
+                net.train()
+                
+            parameters['num_complete'] = results['epoch'] + 1
+            parameters['results'] = results
+            print('loaded networks from previous checkpoint')
+
+        if self.args.save_ckpts:
+            parameters['save_checkpoints'] = (True, 1, self.get_checkpoint_path(), self.args.device)
 
         print('training networks...')
         train_results = train.train(nets, optimizers, dataset, **parameters)
