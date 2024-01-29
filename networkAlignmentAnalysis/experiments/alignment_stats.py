@@ -5,7 +5,7 @@ from matplotlib import pyplot as plt
 from tqdm import tqdm
 
 from .. import train
-from ..utils import compute_stats_by_type, transpose_list, named_transpose, rms
+from ..utils import compute_stats_by_type, transpose_list, named_transpose, rms, str2bool
 from ..datasets import get_dataset
 from ..models.registry import get_model
 from .experiment import Experiment
@@ -27,8 +27,7 @@ class AlignmentStatistics(Experiment):
         parser.add_argument('--network', type=str, default='MLP') # what base network architecture to use
         parser.add_argument('--dataset', type=str, default='MNIST') # what dataset to use
         parser.add_argument('--optimizer', type=str, default='Adam') # what optimizer to train with
-        parser.add_argument('--batch_size', type=int, default=1024) # batch size to pass to DataLoader
-
+        parser.add_argument('--batch-size', type=int, default=1024) # batch size to pass to DataLoader
 
         # default parameters
         parser.add_argument('--default-lr', type=float, default=1e-3) # default learning rate
@@ -36,16 +35,17 @@ class AlignmentStatistics(Experiment):
         parser.add_argument('--default-wd', type=float, default=0) # default weight decay
 
         # progressive dropout parameters
-        parser.add_argument('--num_drops', type=int, default=9, help='number of dropout fractions for progressive dropout')
-        parser.add_argument('--dropout_by_layer', default=False, action='store_true', 
+        parser.add_argument('--num-drops', type=int, default=9, help='number of dropout fractions for progressive dropout')
+        parser.add_argument('--dropout-by-layer', default=False, action='store_true', 
                             help='whether to do progressive dropout by layer or across all layers')
         
         # some metaparameters for the experiment
-        parser.add_argument('--epochs', type=int, default=100) # how many rounds of training to do
-        parser.add_argument('--replicates', type=int, default=5) # how many copies of identical networks to train
-        parser.add_argument('--use-flag', default=False, action='store_true', help='if used, will include flagged layers in analyses')
-        parser.add_argument('--avg_corr', default=True, action='store_false', help='if used will not do the avg_corr methods') 
-
+        parser.add_argument('--epochs', type=int, default=100, help='how many epochs to train the networks on')
+        parser.add_argument('--replicates', type=int, default=5, help='how many replicates of networks to train') 
+        parser.add_argument('--ignore-flag', default=False, action='store_true', help='if used, will omit flagged layers in analyses')
+        parser.add_argument('--avg-corr', default=True, action='store_false', help='if used will not do the avg_corr methods') 
+        parser.add_argument('--by-stride', default=True, type=str2bool, help='whether or not to analyze convolutional layers by stride')
+        
         # return parser
         return parser
     
@@ -79,8 +79,8 @@ class AlignmentStatistics(Experiment):
         print('measuring eigenfeatures...')
         beta, eigvals, eigvecs, class_betas = [], [], [], []
         for net in tqdm(nets):
-            eigenfeatures = net.measure_eigenfeatures(dataset.test_loader, with_updates=False)
-            beta_by_class = net.measure_class_eigenfeatures(dataset.test_loader, eigenfeatures[2], rms=False, with_updates=False)
+            eigenfeatures = net.measure_eigenfeatures(dataset.test_loader, with_updates=False, by_stride=self.args.by_stride)
+            beta_by_class = net.measure_class_eigenfeatures(dataset.test_loader, eigenfeatures[2], rms=False, with_updates=False, by_stride=self.args.by_stride)
             beta.append(eigenfeatures[0])
             eigvals.append(eigenfeatures[1])
             eigvecs.append(eigenfeatures[2])
@@ -91,9 +91,8 @@ class AlignmentStatistics(Experiment):
 
         # do targeted dropout experiment
         print('performing targeted eigenvector dropout...')
-        evec_dropout_parameters = dict(num_drops=self.args.num_drops, by_layer=self.args.dropout_by_layer)
-        evec_dropout_results = train.eigenvector_dropout(nets, dataset, eigvecs, **evec_dropout_parameters)
-
+        evec_dropout_parameters = dict(num_drops=self.args.num_drops, by_layer=self.args.dropout_by_layer, by_stride=self.args.by_stride)
+        evec_dropout_results = train.eigenvector_dropout(nets, dataset, eigvals, eigvecs, **evec_dropout_parameters)
         
         # make full results dictionary
         results = dict(
@@ -151,7 +150,7 @@ class AlignmentStatistics(Experiment):
         model_kwargs = dict(
             dataset=self.args.dataset,
             dropout=self.args.default_dropout,
-            ignore_flag=not(self.args.ignore_flag),
+            ignore_flag=self.args.ignore_flag,
         )
         
         if self.args.network == 'AlexNet' and self.args.dataset == 'MNIST':
@@ -177,13 +176,11 @@ class AlignmentStatistics(Experiment):
             train_set=True,
             num_epochs=self.args.epochs,
             alignment=True,
-            delta_weights=True,
-            average_correlation=self.args.avg_corr,
+            delta_weights=False,
+            average_correlation=False,
             full_correlation=False,
+            by_stride=self.args.by_stride,
         )
-
-        # if self.args.network == 'AlexNet':
-        #     parameters['average_correlation'] = False
 
         print('training networks...')
         train_results = train.train(nets, optimizers, dataset, **parameters)
