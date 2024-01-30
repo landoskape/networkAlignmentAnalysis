@@ -157,7 +157,7 @@ class AlignmentStatistics(Experiment):
         else:
             raise ValueError(f"optimizer ({self.args.optimizer}) not recognized")
         
-        nets = [get_model(self.args.network, build=True, dataset=self.args.dataset, dropout=self.args.default_dropout, ignore_flag=not(self.args.use_flag))
+        nets = [get_model(self.args.network, build=True, dataset=self.args.dataset, dropout=self.args.default_dropout, ignore_flag=self.args.ignore_flag)
                 for _ in range(self.args.replicates)]
         nets = [net.to(self.device) for net in nets]
         
