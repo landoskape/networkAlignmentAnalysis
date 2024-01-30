@@ -89,9 +89,9 @@ def train(nets, optimizers, dataset, **parameters):
             # Perform backward pass & optimization
             loss = [dataset.measure_loss(output, labels) for output in outputs]
             for l, opt in zip(loss, optimizers):
-                l.backward()
-                opt.step()
-
+                l.backward() 
+                opt.step() 
+                
             results['loss'][cidx] = torch.tensor([l.item() for l in loss])
             results['accuracy'][cidx] = torch.tensor([dataset.measure_accuracy(output, labels) for output in outputs])
 
@@ -103,7 +103,7 @@ def train(nets, optimizers, dataset, **parameters):
             if measure_delta_weights:
                 # Measure change in weights if requested
                 results['delta_weights'].append([net.compare_weights(init_weight)
-                                      for net, init_weight in zip(nets, results['init_weights'])])
+                                                 for net, init_weight in zip(nets, results['init_weights'])])
                 
             # note: the double use of measure_correlation is inefficient and could probably 
             # be precomputed once then operated on and appended differently for each term

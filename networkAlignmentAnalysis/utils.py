@@ -140,7 +140,7 @@ def batch_cov(input, centered=True):
     
     # subtract mean if doing centered covariance
     if centered:
-        input = input - input.mean(dim=2, keepdim=True) 
+        input = input - input.mean(dim=2, keepdim=True)
 
     # measure covariance of each input matrix
     bcov = torch.bmm(input, input.transpose(1, 2))
