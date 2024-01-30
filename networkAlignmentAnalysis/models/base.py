@@ -189,7 +189,7 @@ class AlignmentNetwork(nn.Module, ABC):
             setattr(self, 'dropout', p)
         
     @torch.no_grad()
-    def get_layer_inputs(self, x, precomputed=False):
+    def get_layer_inputs(self, x, precomputed=False, idx=None):
         """method for getting list of layer inputs throughout the network"""
         if not precomputed:
             # do a forward pass and store hidden activations if not precomputed
@@ -203,10 +203,12 @@ class AlignmentNetwork(nn.Module, ABC):
                 layer_inputs.append(inputs)
 
         # return outputs
-        return layer_inputs
+        if idx is None:
+            return layer_inputs
+        return layer_inputs[idx]
     
     @torch.no_grad()
-    def get_layer_outputs(self, x=None, precomputed=False):
+    def get_layer_outputs(self, x=None, precomputed=False, idx=None):
         """method for getting list of layer outputs throughout the network"""
         if not precomputed:
             if x is None:
@@ -222,37 +224,45 @@ class AlignmentNetwork(nn.Module, ABC):
                 layer_outputs.append(hidden)
 
         # return outputs
-        return layer_outputs
+        if idx is None:
+            return layer_outputs
+        return layer_outputs[idx]
     
     @torch.no_grad()
-    def get_alignment_layers(self):
+    def get_alignment_layers(self, idx=None):
         """convenience method for retrieving registered layers for alignment measurements throughout the network"""
         layers = []
         for layer, metaprms in zip(self.layers, self.metaparameters):
             if self._include_layer(metaprms):
                 layers.append(metaprms['layer_handle'](layer))
-        return layers
+        if idx is None:
+            return layers
+        return layers[idx]
     
     @torch.no_grad()
-    def get_alignment_metaparameters(self):
+    def get_alignment_metaparameters(self, idx=None):
         """convenience method for retrieving registered layers for alignment measurements throughout the network"""
         metaparameters = []
         for metaprms in self.metaparameters:
             if self._include_layer(metaprms):
                 metaparameters.append(metaprms)
-        return metaparameters
+        if idx is None:
+            return metaparameters
+        return metaparameters[idx]
     
     @torch.no_grad()
-    def get_alignment_layer_indices(self):
+    def get_alignment_layer_indices(self, idx=None):
         """convenience method for retrieving the absolute indices of alignment layers throughout the network"""
         idx_layers = []
-        for idx, metaprms in enumerate(self.metaparameters):
+        for ii, metaprms in enumerate(self.metaparameters):
             if self._include_layer(metaprms):
-                idx_layers.append(idx)
-        return idx_layers
+                idx_layers.append(ii)
+        if idx is None:
+            return idx_layers
+        return idx_layers[idx]
     
     @torch.no_grad()
-    def get_alignment_weights(self, flatten=False, by_stride=True, inputs=None):
+    def get_alignment_weights(self, idx=None, flatten=False, by_stride=True, inputs=None):
         """
         convenience method for retrieving registered weights for alignment measurements throughout the network
         
@@ -291,7 +301,9 @@ class AlignmentNetwork(nn.Module, ABC):
             weights.append(weight)
 
         # return 
-        return weights
+        if idx is None:
+            return weights
+        return weights[idx]
     
     def _preprocess_inputs(self, inputs_to_layers, by_stride=True):
         """
