@@ -17,6 +17,7 @@ from ..utils import remove_by_idx
 from ..utils import set_net_mode
 from ..utils import get_unfold_params
 from ..utils import sklearn_pca
+from ..utils import smart_pca
 
 class AlignmentNetwork(nn.Module, ABC):
     """
@@ -664,29 +665,13 @@ class AlignmentNetwork(nn.Module, ABC):
 
             # if a convolutional layer and working by_stride, then:
             if by_stride and metaprm['unfold']:
-                # measure variance across samples (each batch element of the dataset)
-                # average variance across dimensions of weight across each stride
-                bvar = torch.mean(torch.var(input, dim=0), dim=0) 
-
-                # measuring across each stride independently (for conv layers)
-                bcov = batch_cov(input.permute((2, 1, 0)), centered=centered)
+                # measure variance across dimensions (the actual variance within each stride)
+                # then take average across batch
+                bvar = torch.mean(torch.var(input, dim=1), dim=0) 
                 
-                # eigh will fail if condition number is too high (which can happen
-                # in these strided input activities). If that's the case, we set the 
-                # covariance to the identity so eigh will work, and set the variance
-                # to 0 in that stride, so the weighted_average will ignore that stride.
-                for ii, bc in enumerate(bcov):
-                    if torch.isinf(torch.linalg.cond(bc)):
-                        bvar[ii] = 0 # set variance to 0 to ignore this stride
-                        bcov[ii] = torch.eye(bcov.size(1)) # set to identity for simple eigvec decomp.
-
-                # measure eigenvalues and eigenvectors
-                w, v = named_transpose([self._eigendecomposition(bc, use_rank=True) for bc in bcov])
-
-                # stack 
-                w = torch.stack(w)
-                v = torch.stack(v)
-
+                # get eigenvalues and eigenvectors for each stride
+                w, v = smart_pca(input.permute((2, 1, 0)), centered=centered)
+                
                 # Measure abs value of dot product of weights on eigenvectors for each layer
                 num_strides = v.size(0)
                 weight = weight / torch.norm(weight, dim=1, keepdim=True)
@@ -703,17 +688,7 @@ class AlignmentNetwork(nn.Module, ABC):
                 eigenvectors.append(v_weighted_by_var)
 
             else:
-                # get covariance matrix
-                bcov = batch_cov(input.T, centered=centered)
-
-                if metaprm['unfold']: 
-                    # if doing eigendecomposition on a full convolutional layer (not by stride)
-                    # it's probably going to be a huge matrix and it's smarter to just use 
-                    # sklearn's IncrementalPCA directly (although there might be a more 
-                    # intelligent way to choose how to dispatch IncrementalPCA vs eigh...)
-                    w, v = sklearn_pca(bcov, use_rank=True)
-                else:
-                    w, v = self._eigendecomposition(bcov, use_rank=True)
+                w, v = smart_pca(input.T, centered=centered)
 
                 # Measure abs value of dot product of weights on eigenvectors for each layer
                 weight = weight / torch.norm(weight, dim=1, keepdim=True)
@@ -725,42 +700,6 @@ class AlignmentNetwork(nn.Module, ABC):
 
         return beta, eigenvalues, eigenvectors
     
-
-    def _eigendecomposition(self, C, use_rank=True):
-        """
-        helper for getting eigenvalues and eigenvectors of covariance matrix
-
-        will measure eigenvalues and eigenvectors with torch.linalg.eigh()
-        the output will be sorted from highest to lowest eigenvalue (& eigenvector)
-
-        if use_rank=True, will measure the rank of the covariance matrix and zero
-        out any eigenvalues beyond the rank (that are usually nonzero numerical errors)
-        """
-        try:
-            # measure eigenvalues and eigenvectors
-            w, v = torch.linalg.eigh(C) 
-
-        except torch._C._LinAlgError as error:
-            # this happens if the algorithm failed to converge
-            # try with sklearn's incrementalPCA algorithm
-            return sklearn_pca(C, use_rank=use_rank)
-        
-        except Exception as error:
-            # if any other exception, raise it
-            raise error
-
-        # sort by eigenvalue from highest to lowest
-        w_idx = torch.argsort(-w)
-        w = w[w_idx]
-        v = v[:, w_idx]
-
-        # iff use_rank=True, will set eigenvalues to 0 for probable numerical errors
-        if use_rank:
-            crank = torch.linalg.matrix_rank(C) # measure rank of covariance
-            w[crank:] = 0 # set eigenvalues beyond rank to 0
-
-        # return eigenvalues and eigenvectors
-        return w, v
     
     def _process_collect_activity(self, dataloader, with_updates=True, use_training_mode=False):
         """
