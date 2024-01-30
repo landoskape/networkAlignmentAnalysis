@@ -118,7 +118,7 @@ def smartcorr(input):
     cc[:,idx_zeros] = 0
     return cc
 
-def batch_cov(input, centered=True):
+def batch_cov(input, centered=True, correction=True):
     """
     Performs batched covariance on input data of shape (batch, dim, samples) or (dim, samples)
 
@@ -126,10 +126,14 @@ def batch_cov(input, centered=True):
     and bcov[i] = torch.cov(input[i]) if input.ndim==3
 
     if centered=True (default) will subtract the means first
+
+    if correction=True, will use */(N-1) otherwise will use */N
     """
     assert (input.ndim == 2) or (input.ndim == 3), "input must be a 2D or 3D tensor"
+    assert isinstance(correction, bool), "correction must be a boolean variable"
+
     # check if batch dimension was provided
-    no_batch = input.ndim == 2 
+    no_batch = input.ndim == 2
     
     # add an empty batch dimension if not provided
     if no_batch: 
@@ -146,7 +150,7 @@ def batch_cov(input, centered=True):
     bcov = torch.bmm(input, input.transpose(1, 2))
     
     # correct for number of samples
-    bcov /= (S-1)
+    bcov /= (S - 1.0*correction)
     
     # remove empty batch dimension if not provided
     if no_batch: 
@@ -154,7 +158,85 @@ def batch_cov(input, centered=True):
 
     return bcov
 
-def sklearn_pca(input, use_rank=True):
+def smart_pca(input, centered=True, use_rank=True):
+    """
+    smart algorithm for pca optimized for speed
+
+    input should either have shape (batch, dim, samples) or (dim, samples)
+    if dim > samples, will use svd and if samples < dim will use covariance/eigh method
+
+    will center data when centered=True
+
+    if it fails, will fall back on performing sklearns IncrementalPCA whenever forcetry=True
+    """
+    assert (input.ndim==2) or (input.ndim==3), "input should be a matrix or batched matrices"
+    if input.ndim==2:
+        no_batch = True
+        input = input.unsqueeze(0) # create batch dimension for uniform code
+    else:
+        no_batch = False
+        
+    _, D, S = input.size()
+    if D > S:
+        # if more dimensions than samples, it's more efficient to run svd
+        v, w, _ = named_transpose([torch.linalg.svd(inp) for inp in input])
+        # convert singular values to eigenvalues
+        w = [ww**2/(S-1) for ww in w]
+        # append zeros because svd returns w in R**k where k = min(D, S)
+        w = [torch.concatenate((ww, torch.zeros(D-S))) for ww in w]
+    
+    else:
+        # if more samples than dimensions, it's more efficient to run a standard eigh
+        bcov = batch_cov(input, centered=centered, correction=False)
+        w, v = named_transpose([eigendecomposition(C, use_rank=use_rank) for C in bcov])
+    
+    w = torch.stack(w)
+    v = torch.stack(v)
+
+    if no_batch:
+        w = w.squeeze(0)
+        v = v.squeeze(0)
+
+    return w, v
+
+
+def eigendecomposition(C, use_rank=True):
+    """
+    helper for getting eigenvalues and eigenvectors of covariance matrix
+
+    will measure eigenvalues and eigenvectors with torch.linalg.eigh()
+    the output will be sorted from highest to lowest eigenvalue (& eigenvector)
+
+    if use_rank=True, will measure the rank of the covariance matrix and zero
+    out any eigenvalues beyond the rank (that are usually nonzero numerical errors)
+    """
+    try:
+        # measure eigenvalues and eigenvectors
+        w, v = torch.linalg.eigh(C) 
+
+    except torch._C._LinAlgError as error:
+        # this happens if the algorithm failed to converge
+        # try with sklearn's incrementalPCA algorithm
+        return sklearn_pca(C, use_rank=use_rank)
+    
+    except Exception as error:
+        # if any other exception, raise it
+        raise error
+
+    # sort by eigenvalue from highest to lowest
+    w_idx = torch.argsort(-w)
+    w = w[w_idx]
+    v = v[:, w_idx]
+
+    # iff use_rank=True, will set eigenvalues to 0 for probable numerical errors
+    if use_rank:
+        crank = torch.linalg.matrix_rank(C) # measure rank of covariance
+        w[crank:] = 0 # set eigenvalues beyond rank to 0
+
+    # return eigenvalues and eigenvectors
+    return w, v
+
+def sklearn_pca(input, use_rank=True, rank=None):
     """
     sklearn incrementalPCA algorithm serving as a replacement for eigh when it fails
     
@@ -166,6 +248,8 @@ def sklearn_pca(input, use_rank=True):
     components and set the eigenvalues to 0
 
     if use_rank=False, will attempt to fit all the components
+    if rank is not None, will attempt to fit #=rank components without measuring the rank directly
+    (will ignore "rank" if use_rank=False)
 
     returns w, v where w is eigenvalues and v is eigenvectors sorted from highest to lowest
     """
@@ -173,7 +257,7 @@ def sklearn_pca(input, use_rank=True):
     num_samples, num_features = input.shape
 
     # measure rank (or set to None)
-    rank = int(torch.linalg.matrix_rank(input)) if use_rank else None
+    rank = None if not use_rank else (rank if rank is not None else fast_rank(input))    
 
     # create and fit IncrementalPCA object on input data
     ipca = IncrementalPCA(n_components=rank).fit(input)
@@ -194,6 +278,11 @@ def sklearn_pca(input, use_rank=True):
     
     return torch.tensor(w, dtype=torch.float), torch.tensor(v, dtype=torch.float).T
 
+def fast_rank(input):
+    """uses transpose to speed up rank computation, otherwise normal"""
+    if input.size(-2) < input.size(-1):
+        input = torch.transpose(input, -2, -1)
+    return int(torch.linalg.matrix_rank(input))
 
 # ------------------ alignment functions ----------------------
 def alignment(input, weight, method='alignment'):
