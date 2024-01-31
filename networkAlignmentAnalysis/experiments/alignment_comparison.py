@@ -195,8 +195,6 @@ class AlignmentComparison(Experiment):
             num_epochs=self.args.epochs,
             alignment=True,
             delta_weights=True,
-            average_correlation=True, 
-            full_correlation=False,
         )
 
         print('training networks...')
@@ -223,7 +221,6 @@ class AlignmentComparison(Experiment):
 
         print("getting statistics on run data...")
         alignment = torch.stack([torch.mean(align, dim=2) for align in train_results['alignment']])
-        correlation = torch.stack([torch.mean(corr, dim=2) for corr in train_results['avgcorr']])
         
         cmap = mpl.colormaps['tab10']
 
@@ -233,8 +230,6 @@ class AlignmentComparison(Experiment):
                                                                 num_types=num_types, dim=1, method='se')
 
         align_mean, align_se = compute_stats_by_type(alignment, num_types=num_types, dim=1, method='se')
-
-        corr_mean, corr_se = compute_stats_by_type(correlation, num_types=num_types, dim=1, method='se')
 
         test_loss_mean, test_loss_se = compute_stats_by_type(torch.tensor(test_results['loss']),
                                                                 num_types=num_types, dim=0, method='se')
@@ -325,26 +320,6 @@ class AlignmentComparison(Experiment):
         ax[0].legend(loc='lower right')
 
         self.plot_ready('train_alignment_by_layer')
-
-
-        # Make Correlation Figure
-        fig, ax = plt.subplots(1, num_layers, figsize=(num_layers*figdim, figdim), layout='constrained', sharex=True)
-        for idx, label in enumerate(labels):
-            for layer in range(num_layers):
-                cmn = corr_mean[layer, idx]
-                cse = corr_se[layer, idx]
-                ax[layer].plot(range(num_train_epochs), cmn, color=cmap(idx), label=label)
-                ax[layer].fill_between(range(num_train_epochs), cmn+cse, cmn-cse, color=(cmap(idx), alpha))
-
-        for layer in range(num_layers):
-            ax[layer].set_ylim(0, None)
-            ax[layer].set_xlabel('Training Epoch')
-            ax[layer].set_ylabel('Correlation')
-            ax[layer].set_title(f"Layer {layer}")
-
-        ax[0].legend(loc='lower right')
-
-        self.plot_ready('train_correlation_by_layer')
 
 
     def plot_dropout_results(self, dropout_results, dropout_parameters, prms):

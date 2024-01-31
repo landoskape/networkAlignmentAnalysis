@@ -28,18 +28,14 @@ def train(nets, optimizers, dataset, **parameters):
     # track_accuracy = torch.zeros((num_steps, num_nets))
 
     # --- optional analyses ---
-    by_stride = parameters.get('by_stride', True) # for how to measure alignment in convolutional layers
     measure_alignment = parameters.get('alignment', True)
     measure_delta_weights = parameters.get('delta_weights', False)
-    measure_avgcorr = parameters.get('average_correlation', True)
-    measure_fullcorr = parameters.get('full_correlation', False)
 
     # --- create results dictionary if not provided and handle checkpoint info ---
     results = parameters.get('results', False)
     num_complete = parameters.get('num_complete', 0)
     save_ckpt, freq_ckpt, path_ckpt, dev = parameters.get('save_checkpoints', (False, 1, '', ''))
     if not results:
-        print('initializing new results dictionary')
         # initialize dictionary for storing performance across epochs
         results = {'loss': torch.zeros((num_steps, num_nets)),
                    'accuracy': torch.zeros((num_steps, num_nets))}
@@ -52,14 +48,6 @@ def train(nets, optimizers, dataset, **parameters):
         if measure_delta_weights:
             results['delta_weights'] = []
             results['init_weights'] = [net.get_alignment_weights() for net in nets]
-
-        # measure average correlation for each layer
-        if measure_avgcorr:
-            results['avgcorr'] = []
-
-        # measure full correlation for each layer
-        if measure_fullcorr:
-            results['fullcorr'] = []
 
     # If loaded from checkpoint but running more epochs than initialized for.
     elif results['loss'].shape[0] < num_steps:
@@ -97,22 +85,14 @@ def train(nets, optimizers, dataset, **parameters):
 
             if measure_alignment:
                 # Measure alignment if requested
-                results['alignment'].append([net.measure_alignment(images, precomputed=True, method='alignment', by_stride=by_stride)
+                results['alignment'].append([net.measure_alignment(images, precomputed=True, method='alignment')
                                              for net in nets])
             
             if measure_delta_weights:
                 # Measure change in weights if requested
                 results['delta_weights'].append([net.compare_weights(init_weight)
                                                  for net, init_weight in zip(nets, results['init_weights'])])
-                
-            # note: the double use of measure_correlation is inefficient and could probably 
-            # be precomputed once then operated on and appended differently for each term
-            if measure_avgcorr:
-                results['avgcorr'].append([net.measure_correlation(images, precomputed=True, reduced=True) for net in nets])
             
-            if measure_fullcorr:
-                results['fullcorr'].append([net.measure_correlation(images, precomputed=True, reduced=False) for net in nets])
-
         if save_ckpt & (epoch % freq_ckpt == 0):
             save_checkpoint(nets,
                             optimizers,
@@ -150,7 +130,6 @@ def test(nets, dataset, **parameters):
     num_batches = 0
     
     # --- optional analyses ---
-    by_stride = parameters.get('by_stride', True) # for how to measure alignment in convolutional layers
     measure_alignment = parameters.get('alignment', True)
 
     # measure alignment throughout training
@@ -173,7 +152,7 @@ def test(nets, dataset, **parameters):
 
         # Measure Alignment
         if measure_alignment:
-            alignment.append([net.measure_alignment(images, precomputed=True, method='alignment', by_stride=by_stride)
+            alignment.append([net.measure_alignment(images, precomputed=True, method='alignment')
                               for net in nets])
     
     results = {
@@ -381,7 +360,6 @@ def eigenvector_dropout(nets, dataset, eigenvalues, eigenvectors, **parameters):
     drop_fraction = torch.linspace(0,1,num_drops+2)[1:-1]
     by_layer = parameters.get('by_layer', False)
     num_layers = len(idx_dropout_layers) if by_layer else 1
-    by_stride = parameters.get('by_stride', True) 
 
     # create index of eigenvalue for compatibility with get_dropout_indices
     idx_eigenvalue = [torch.fliplr(torch.tensor(range(0, ev.size(1))).expand(num_nets, -1)) for ev in eigenvectors[0]]
@@ -428,24 +406,21 @@ def eigenvector_dropout(nets, dataset, eigenvalues, eigenvectors, **parameters):
                                                             evals,
                                                             evecs, 
                                                             [drop[idx, :] for drop in drop_high], 
-                                                            drop_layer,
-                                                            by_stride=by_stride)[0]
+                                                            drop_layer)[0]
                             for idx, (net, evals, evecs) in enumerate(zip(nets, drop_evals, drop_evecs))]
                 
                 out_low = [net.forward_eigenvector_dropout(images, 
                                                            evals, 
                                                            evecs, 
                                                            [drop[idx, :] for drop in drop_low], 
-                                                           drop_layer,
-                                                           by_stride=by_stride)[0]
+                                                           drop_layer)[0]
                             for idx, (net, evals, evecs) in enumerate(zip(nets, drop_evals, drop_evecs))]
                 
                 out_rand = [net.forward_eigenvector_dropout(images, 
                                                             evals,
                                                             evecs, 
                                                             [drop[idx, :] for drop in drop_rand], 
-                                                            drop_layer,
-                                                            by_stride=by_stride)[0]
+                                                            drop_layer)[0]
                             for idx, (net, evals, evecs) in enumerate(zip(nets, drop_evals, drop_evecs))]
                 
                 # get loss with targeted dropout

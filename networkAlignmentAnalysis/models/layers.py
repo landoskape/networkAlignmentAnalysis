@@ -1,7 +1,5 @@
-import torch
 from torch import nn
 from .. import utils
-from functools import partial
 
 # The LAYER_REGISTRY contains meta parameters for each type of layer used in alignment networks
 # each layer type is associated with a few features, including:
@@ -32,7 +30,6 @@ REGISTRY_REQUIREMENTS = [
     'layer_index',
     'layer_handle', 
     'alignment_method', 
-    'correlation_method', 
     'unfold', 
     'ignore', 
     'flag',
@@ -45,7 +42,6 @@ LAYER_REGISTRY = {
         'layer_index': None,
         'layer_handle': lambda layer:layer, 
         'alignment_method': utils.alignment_linear,
-        'correlation_method': utils.correlation_linear,
         'unfold': False,
         'ignore': False,
         'flag': False,
@@ -56,7 +52,6 @@ LAYER_REGISTRY = {
         'layer_index': None, 
         'layer_handle': lambda layer:layer, 
         'alignment_method': utils.alignment_convolutional,
-        'correlation_method': utils.correlation_convolutional,
         'unfold': True,
         'ignore': False,
         'flag': True,
@@ -71,7 +66,6 @@ def default_metaprms_ignore(name):
         'layer_index': None,
         'layer_handle': None,
         'alignment_method': None,
-        'correlation_method': None, 
         'unfold': False,
         'ignore': True,
         'flag': True,
@@ -85,7 +79,6 @@ def default_metaprms_linear(index, name='linear', flag=False):
         'layer_index': index,
         'layer_handle': lambda layer: layer[index],
         'alignment_method': utils.alignment_linear,
-        'correlation_method': utils.correlation_linear,
         'unfold': False, 
         'ignore': False,
         'flag': flag,
@@ -99,7 +92,6 @@ def default_metaprms_conv2d(index, name='conv2d', flag=True):
         'layer_index': index,
         'layer_handle': lambda layer: layer[index],
         'alignment_method': utils.alignment_convolutional,
-        'correlation_method': utils.correlation_convolutional,
         'unfold': True, 
         'ignore': False,
         'flag': flag,

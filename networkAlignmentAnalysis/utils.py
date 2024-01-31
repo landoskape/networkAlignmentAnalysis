@@ -19,6 +19,19 @@ def avg_align_by_layer(full):
 def align_by_layer(full, layer):
     warn("align_by_layer is deprecated, change to value_by_layer!", DeprecationWarning, stacklevel=2)
     return value_by_layer(full, layer)
+
+def alignment_conv_look(processed_activity, layer, stride, grid, method='alignment'):
+    warn("alignment_conv_look is deprecated. no longer necessary to use!", DeprecationWarning, stacklevel=2)
+    # Take (NI, C, H, W) (preprocessed) input activity
+    # And compute the similarity for one "look" e.g. one position of the convolutional filter
+    num_images = processed_activity.shape[0]
+    num_elements = processed_activity.shape[1] * layer.kernel_size[0] * layer.kernel_size[1]
+    h_idx = grid[0] + stride[0]*layer.stride[0]
+    w_idx = grid[1] + stride[1]*layer.stride[1]
+    aligned_input = processed_activity[:, :, h_idx, w_idx].reshape(num_images, num_elements)
+    aligned_weights = layer.weight.data.reshape(layer.out_channels, num_elements).detach()
+    stride_variance = torch.mean(torch.var(aligned_input, dim=1))
+    return alignment(aligned_input, aligned_weights, method=method), stride_variance
 # ------------------------
 
 
@@ -158,7 +171,7 @@ def batch_cov(input, centered=True, correction=True):
 
     return bcov
 
-def smart_pca(input, centered=True, use_rank=True):
+def smart_pca(input, centered=True, use_rank=True, correction=True):
     """
     smart algorithm for pca optimized for speed
 
@@ -170,6 +183,8 @@ def smart_pca(input, centered=True, use_rank=True):
     if it fails, will fall back on performing sklearns IncrementalPCA whenever forcetry=True
     """
     assert (input.ndim==2) or (input.ndim==3), "input should be a matrix or batched matrices"
+    assert isinstance(correction, bool), "correction should be a boolean"
+
     if input.ndim==2:
         no_batch = True
         input = input.unsqueeze(0) # create batch dimension for uniform code
@@ -181,22 +196,25 @@ def smart_pca(input, centered=True, use_rank=True):
         # if more dimensions than samples, it's more efficient to run svd
         v, w, _ = named_transpose([torch.linalg.svd(inp) for inp in input])
         # convert singular values to eigenvalues
-        w = [ww**2/(S-1) for ww in w]
+        w = [ww**2/(S-1.0*correction) for ww in w]
         # append zeros because svd returns w in R**k where k = min(D, S)
         w = [torch.concatenate((ww, torch.zeros(D-S))) for ww in w]
     
     else:
-        # if more samples than dimensions, it's more efficient to run a standard eigh
-        bcov = batch_cov(input, centered=centered, correction=False)
+        # if more samples than dimensions, it's more efficient to run eigh
+        bcov = batch_cov(input, centered=centered, correction=correction)
         w, v = named_transpose([eigendecomposition(C, use_rank=use_rank) for C in bcov])
     
+    # return to stacked tensor across batch dimension
     w = torch.stack(w)
     v = torch.stack(v)
 
+    # if no batch originally provided, squeeze out batch dimension
     if no_batch:
         w = w.squeeze(0)
         v = v.squeeze(0)
 
+    # return eigenvalues and eigenvectors
     return w, v
 
 
@@ -324,61 +342,29 @@ def alignment(input, weight, method='alignment'):
     return rq/torch.trace(cc)
 
 
-def alignment_linear(activity, layer, method='alignment', **kwargs):
+def alignment_linear(activity, layer, method='alignment'):
     """wrapper for alignment of linear layer, kwargs for compatibility"""
     return alignment(activity, layer.weight.data, method=method)
 
 
-def alignment_convolutional(activity, layer, by_stride=True, method='alignment', **kwargs):
+def alignment_convolutional(activity, layer, method='alignment'):
     """
     wrapper for alignment of convolutional layer (for conv2d)
 
-    there are two natural methods - one is to measure the alignment using each 
-    convolutional stride, the second is to measure the alignment of the full 
-    unfolded layer as if it was a matrix multiplication. by_stride determines
-    which one to use. 
-    
-    when by_stride=True, a weighted average of the alignment at each stride is
-    taken where the weights are the variance in the data at that stride. This way,
-    the output is a (num_output_channels, ) shaped tensor regardless of the setting
-    used for by_stride.
-
-    **kwargs is just for compatibility and accepting irrelevant arguments without breaking
+    measures alignment using each convolutional stride then takes a weighted
+    average across strides by the variance in the input data
     """
     layer_prms = get_unfold_params(layer)
+    # unfold data so it's in shape (batch, kernel_dim, num_strides)
     unfolded_input = torch.nn.functional.unfold(activity, layer.kernel_size, **layer_prms)
-    if by_stride:
-        # get average variance of each stride
-        variance_stride = torch.mean(torch.var(unfolded_input, dim=1), dim=0)
-        # get weights of layer
-        weight = layer.weight.data
-        # get alignment for each channel on each stride
-        align_stride = torch.stack([alignment(unfolded_input[:, :, i], weight.view(weight.size(0), -1), method=method) for i in range(unfolded_input.size(2))], dim=1)
-        # return weighted average, weighting by variance on each stride (ignoring nans in case any strides have no variance)
-        return weighted_average(align_stride, variance_stride.view(1, -1), 1, ignore_nan=True)
-
-    else:
-        # get the number of strides
-        h_max, w_max = get_maximum_strides(activity.shape[2], activity.shape[3], layer)
-        # reshape for (batch, full_conv_dim)
-        unfolded_input = unfolded_input.transpose(1, 2).reshape(activity.size(0), -1)
-        # shape weight appropriately (repeat across strides)
-        unfolded_weight = layer.weight.data.view(layer.weight.size(0), -1).repeat(1, h_max*w_max)
-        # return alignment
-        return alignment(unfolded_input, unfolded_weight, method=method)
-
-
-def alignment_conv_look(processed_activity, layer, stride, grid, method='alignment'):
-    # Take (NI, C, H, W) (preprocessed) input activity
-    # And compute the similarity for one "look" e.g. one position of the convolutional filter
-    num_images = processed_activity.shape[0]
-    num_elements = processed_activity.shape[1] * layer.kernel_size[0] * layer.kernel_size[1]
-    h_idx = grid[0] + stride[0]*layer.stride[0]
-    w_idx = grid[1] + stride[1]*layer.stride[1]
-    aligned_input = processed_activity[:, :, h_idx, w_idx].reshape(num_images, num_elements)
-    aligned_weights = layer.weight.data.reshape(layer.out_channels, num_elements).detach()
-    stride_variance = torch.mean(torch.var(aligned_input, dim=1))
-    return alignment(aligned_input, aligned_weights, method=method), stride_variance
+    # get average variance of each stride
+    variance_stride = torch.mean(torch.var(unfolded_input, dim=1), dim=0)
+    # get weights of layer
+    weight = layer.weight.data
+    # get alignment for each channel on each stride
+    align_stride = torch.stack([alignment(unfolded_input[:, :, i], weight.view(weight.size(0), -1), method=method) for i in range(unfolded_input.size(2))], dim=1)
+    # return weighted average, weighting by variance on each stride (ignoring nans in case any strides have no variance)
+    return weighted_average(align_stride, variance_stride.view(1, -1), 1, ignore_nan=True)
 
 def get_maximum_strides(h_input, w_input, layer):
     h_max = int(np.floor((h_input + 2*layer.padding[0] - layer.dilation[0]*(layer.kernel_size[0] - 1) -1)/layer.stride[0] + 1))
@@ -387,67 +373,6 @@ def get_maximum_strides(h_input, w_input, layer):
 
 def get_unfold_params(layer):
     return dict(stride=layer.stride, padding=layer.padding, dilation=layer.dilation)
-
-def correlation(output, method='corr'):
-    """
-    Expects a batch x neuron tensor of output activity of a layer
-
-    Returns: 
-    Pairwise variance or correlation coefficient between neurons across batch dimension
-
-    NOTE:
-    As of now, most models have processing layers after the alignment layer in each
-    registered layer. That means that the data which will be sent to this method is
-    not really the post-alignment layer activations... should change the models before
-    using this correlation method much. 
-    """
-    if method=='var':
-        return torch.cov(output.T)
-    elif method=='corr':
-        return smartcorr(output.T)
-    else:
-        raise ValueError(f"Method ({method}) not recognized, must be 'var' or 'corr'")
-
-def correlation_linear(output, method='corr', **kwargs):
-    """wrapper for correlation of linear layer, kwargs for compatibility"""
-    return correlation(output, method=method)
-
-def correlation_convolutional(output, method='corr', by_stride=False, **kwargs):
-    """
-    wrapper for correlation of convolutional layer (conv2d)
-    
-    there are two natural methods - one is to measure the correlation using each 
-    convolutional stride, the second is to measure the correlation of the full 
-    unfolded layer. by_stride determines which one to use. 
-    
-    when by_stride=True, a weighted average of the correlation at each stride is
-    taken where the weights are the variance in the output (across channels and batch)
-    at that stride. This way, the output is a (num_output_channels, num_output_channels)
-    shaped tensor regardless of the setting used for by_stride.
-
-    NOTE: 
-    This choice for by_stride=True was made because it works and is a simple way
-    of averaging across strides. There might be a smarter way to average where the per
-    channel variance is used rather than the across channel variance. We should think
-    about that and make a better decision, or potentially created an option for doing
-    it either way depending on the scientific goal.
-
-    kwargs for compatibility
-    """
-    if by_stride:
-        num_channels, h_max, w_max = output.size(1), output.size(2), output.size(3)
-        corr = torch.zeros((num_channels, num_channels), dtype=output.dtype).to(get_device(output))
-        vars = []
-        for h in range(h_max):
-            for w in range(w_max):
-                cvar = torch.var(output[:, :, h, w].flatten())
-                vars.append(cvar)
-                corr += correlation(output[:, :, h, w], method=method) * cvar
-        corr /= torch.sum(torch.tensor(vars))
-        return corr
-    else:
-        output_by_channel = output.transpose(0, 1).reshape(output.shape[1], -1) # channels x (batch*H*W)
-        return correlation(output_by_channel.T, method=method)
 
 def avg_value_by_layer(full):
     """

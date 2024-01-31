@@ -263,36 +263,17 @@ class AlignmentNetwork(nn.Module, ABC):
         return idx_layers[idx]
     
     @torch.no_grad()
-    def get_alignment_weights(self, idx=None, flatten=False, by_stride=True, inputs=None):
+    def get_alignment_weights(self, idx=None, flatten=False):
         """
         convenience method for retrieving registered weights for alignment measurements throughout the network
         
         if flatten=True, will flatten weights so they have shape (nodes/channels, numel_per_weight)
-        
-        if by_stride==True, will maintain convolutional weights "as are" to process them for each stride
-        if by_stride==False, will unfold weights and expand to shape of input to layer (requires inputs)
         """
-        # get layers and metaparameters
-        layers = self.get_alignment_layers()
-        metaprms = self.get_alignment_metaparameters()
-        
-        # check input arguments
-        if not by_stride:
-            if inputs is None:
-                raise ValueError("If unfolding convolutional layers is requested, input_to_layers must be provided to determine the correct shape.")
-            if len(inputs) != len(layers):
-                raise ValueError(f"There are {len(weights)} registered weights but only {len(inputs)} were provided.")
-        
         # go through each layer and retrieve weight as desired
         weights = []
-        for input, layer, metaprm in zip(inputs, layers, metaprms):
+        for layer in self.get_alignment_layers():
             # get weight data for this layer
             weight = layer.weight.data
-
-            # if convolutional layer and requesting unfolding:
-            if metaprm['unfold'] and not by_stride:
-                num_strides = prod(get_maximum_strides(input.size(2), input.size(3), layer))
-                weight = weight.view(weight.size(0), -1).repeat(1, num_strides)
 
             # if requesting flat weights, flatten them
             if flatten:
@@ -306,7 +287,7 @@ class AlignmentNetwork(nn.Module, ABC):
             return weights
         return weights[idx]
     
-    def _preprocess_inputs(self, inputs_to_layers, by_stride=True):
+    def _preprocess_inputs(self, inputs_to_layers):
         """
         helper method for processing inputs to layers as needed for certain alignment operations
 
@@ -315,9 +296,7 @@ class AlignmentNetwork(nn.Module, ABC):
         linear layer:
             will leave inputs to layers unchanged if input to a feedforward layer
         convolutional layer:
-            will unfold inputs to (batch, full_conv_dim) if by_stride=False
-            will unfold inputs to (batch, conv_weight_dim, num_strides) if by_stride=True
-        
+            will unfold inputs to (batch, conv_weight_dim, num_strides)
         """
         # initialize new list of inputs to layers
         preprocessed = []
@@ -332,9 +311,6 @@ class AlignmentNetwork(nn.Module, ABC):
                 # if convolutional layer, unfold layer to (batch / conv_dim / num_strides)
                 layer_prms = get_unfold_params(layer)
                 unfolded_input = torch.nn.functional.unfold(input, layer.kernel_size, **layer_prms)
-                # if not using "by_stride", reshape to (batch_dim, full_conv_dim)
-                if not by_stride:
-                    unfolded_input = unfolded_input.transpose(1, 2).reshape(input.size(0), -1)
                 preprocessed.append(unfolded_input)
             else:
                 # if linear layer, no preprocessing should ever be required
@@ -352,24 +328,13 @@ class AlignmentNetwork(nn.Module, ABC):
         return delta_weights
     
     @torch.no_grad()
-    def measure_alignment(self, x, precomputed=False, method='alignment', by_stride=True):
+    def measure_alignment(self, x, precomputed=False, method='alignment'):
         # Pre-layer activations start with input (x) and ignore output
         layer_inputs = self.get_layer_inputs(x, precomputed=precomputed)
         alignment = []
         for input, layer, metaprms in zip(layer_inputs, self.get_alignment_layers(), self.get_alignment_metaparameters()):
-            alignment.append(metaprms['alignment_method'](input, layer, method=method, by_stride=by_stride))
+            alignment.append(metaprms['alignment_method'](input, layer, method=method))
         return alignment
-    
-    @torch.no_grad()
-    def measure_correlation(self, x, precomputed=False, method='corr', by_stride=True, reduced=True):
-        correlation = []
-        zipped = zip(self.get_layer_outputs(x=x, precomputed=precomputed), self.get_alignment_metaparameters())
-        for activation, metaprms in zipped:
-            ccorr = metaprms['correlation_method'](activation, method=method, by_stride=by_stride)
-            if reduced:
-                ccorr = torch.mean(torch.abs(ccorr))
-            correlation.append(ccorr)
-        return correlation
 
     @torch.no_grad()
     def forward_targeted_dropout(self, x, idxs, layers):
@@ -404,7 +369,7 @@ class AlignmentNetwork(nn.Module, ABC):
     
 
     @torch.no_grad()
-    def forward_eigenvector_dropout(self, x, eigenvalues, eigenvectors, idxs, layers, by_stride=True):
+    def forward_eigenvector_dropout(self, x, eigenvalues, eigenvectors, idxs, layers):
         """
         perform forward pass with targeted dropout of loadings on eigenvectors on input to hidden layers
 
@@ -414,9 +379,7 @@ class AlignmentNetwork(nn.Module, ABC):
         idxs: which eigenvectors to dropout from the activity as it propagates through the network
         layers: which layers to do dropouts in (an index)
 
-        by_stride indicates whether the eigenvectors were computed by stride for convolutional layers
-        and will dropout eigenvectors from each stride independently. if by_stride=False, will interpret
-        it as a single unfolded matrix multiplication.
+        for convolutional layers, dropout is done on each stride independently (with the same subspace)
         
         returns the output accounting for targeted dropout and also the full list of hidden
         activations after targeted dropout. will correct the norm based on the fraction of 
@@ -454,8 +417,8 @@ class AlignmentNetwork(nn.Module, ABC):
                 dropout_correction = None
 
             # do forward pass through this layer
-            kwargs = dict(subspace=dropout_evec, correction=dropout_correction, by_stride=by_stride)
-            x, input_to_layer = self._forward_subspace_dispatch(x, layer, metaprms, **kwargs)
+            kwargs = dict(subspace=dropout_evec, correction=dropout_correction)
+            x, input_to_layer = self._forward_subspace(x, layer, metaprms, **kwargs)
 
             if self._include_layer(metaprms):
                 hidden_inputs.append(input_to_layer)
@@ -463,17 +426,17 @@ class AlignmentNetwork(nn.Module, ABC):
         # return output of network and inputs to each alignment layer
         return x, hidden_inputs
     
-    def _forward_subspace_dispatch(self, x, layer, metaprms, subspace=None, correction=None, **kwargs):
+    def _forward_subspace(self, x, layer, metaprms, subspace=None, correction=None):
         """helper for sending to forward function of desired type"""
         if metaprms['unfold']:
             return self._forward_subspace_convolutional(x, layer, metaprms, subspace=subspace, 
-                                                        correction=correction, **kwargs)
+                                                        correction=correction)
         else:
             return self._forward_subspace_linear(x, layer, metaprms, subspace=subspace, 
-                                                 correction=correction, **kwargs)
+                                                 correction=correction)
 
 
-    def _forward_subspace_linear(self, x, layer, _, subspace=None, correction=None, **kwargs):
+    def _forward_subspace_linear(self, x, layer, _, subspace=None, correction=None):
         """
         implement forward pass for linear layer with optional subspace projection of input to layer
         """
@@ -484,7 +447,7 @@ class AlignmentNetwork(nn.Module, ABC):
         out = layer(x)
         return out, x
 
-    def _forward_subspace_convolutional(self, x, layer, metaprms, subspace=None, correction=None, by_stride=True, **kwargs):
+    def _forward_subspace_convolutional(self, x, layer, metaprms, subspace=None, correction=None):
         """
         implement forward pass for convolutional layer with optional subspace projection of input
         
@@ -494,32 +457,30 @@ class AlignmentNetwork(nn.Module, ABC):
 
         then will pass through the layer.
 
-        by_stride indicates which subspace to project onto-- the "strides" subspace or the "full"
-        convolutional subspace. The dimensions of the subspace must be equal to the dimension of the
-        convolutional kernel if by_stride=True and must be equal to the dimension of the kernel times
-        the number of strides if by_stride=False.
+        projects onto the subspace within each stride of the convolution
         """
-        def _conv_with_subspace(x, layer, by_stride, subspace, correction):
+        def _conv_with_subspace(x, layer, subspace, correction):
             """internal helper for convolving in a subspace"""
             # start by getting size of input to conv layer and layer parameters
             h_max, w_max = get_maximum_strides(x.size(2), x.size(3), layer)
             layer_prms = get_unfold_params(layer)
 
-            # this is the layer we want to reimplement with a subspace projection
-            x = torch.nn.functional.unfold(x, layer.kernel_size, **layer_prms)
-            if by_stride:
-                x = torch.matmul(subspace, torch.matmul(subspace.T, x))
-                if correction is not None:
-                    x = x * correction
-            else:
-                raise ValueError("Not implemented yet, sorry!")
-            
-            # save input to target conv layer
-            input_to_conv = x.clone()
-            
             # perform convolution in unfolded space
             weight = layer.weight.data
             weight = weight.view(weight.size(0), -1)
+
+            # this is the layer we want to reimplement with a subspace projection
+            x = torch.nn.functional.unfold(x, layer.kernel_size, **layer_prms)
+
+            # project out subspace
+            x = torch.matmul(subspace, torch.matmul(subspace.T, x))
+
+            # apply multiplicative gain correction if provided
+            if correction is not None:
+                x = x * correction
+            
+            # save input to target conv layer
+            input_to_conv = x.clone()
 
             # convolve
             x = torch.matmul(weight, x).view(x.size(0), weight.size(0), h_max, w_max)
@@ -535,7 +496,7 @@ class AlignmentNetwork(nn.Module, ABC):
                 for idx, sublayer in enumerate(layer):
                     if idx == layer_idx:
                         # if conv layer, do convolution with subspace
-                        x, input_to_conv = _conv_with_subspace(x, sublayer, by_stride, subspace, correction)
+                        x, input_to_conv = _conv_with_subspace(x, sublayer, subspace, correction)
                     else:
                         # if not target layer, we can process with no funny business
                         x = sublayer(x)
@@ -545,7 +506,7 @@ class AlignmentNetwork(nn.Module, ABC):
             
             else:
                 # if not packaged in sequential, can do this directly
-                x, input_to_conv = _conv_with_subspace(x, layer, by_stride, subspace, correction)
+                x, input_to_conv = _conv_with_subspace(x, layer, subspace, correction)
 
             return x, input_to_conv
         
@@ -555,7 +516,7 @@ class AlignmentNetwork(nn.Module, ABC):
         
                 
     @torch.no_grad()
-    def measure_eigenfeatures(self, dataloader, with_updates=True, centered=True, by_stride=True):
+    def measure_eigenfeatures(self, dataloader, with_updates=True, centered=True):
         """
         measure the eigenvalues and eigenvectors of the input to each layer
         and also measure how much each weight array uses each eigenvector
@@ -570,23 +531,21 @@ class AlignmentNetwork(nn.Module, ABC):
         if centered=False, will measure eigenfeatures of uncentered X.T @ X where
         x is the input to each alignment layer. 
 
-        **by_stride** is used to determine whether to use each stride of unfold conv layers
-        -- if by_stride=False, will unfold and measure eigenfeatures that way
-        -- if by_stride=True, will measure for each stride (and take the average
-        across strides weighted by the variance of the input data)
+        for convolutional layers, will unfold and measure eigenfeatures for each 
+        stride (and take the average across strides weighted by input variance)
         """
         # get inputs to layers for entire dataset in dataloader
         inputs, _ = self._process_collect_activity(dataloader, with_updates=with_updates, use_training_mode=False)
         
-        # retrieve weights and flatten inputs as required by the by_stride parameter
-        weights = self.get_alignment_weights(flatten=True, by_stride=by_stride, inputs=inputs)
-        inputs = self._preprocess_inputs(inputs, by_stride=by_stride)
+        # retrieve weights, reshape, and flatten inputs as required
+        weights = self.get_alignment_weights(flatten=True, inputs=inputs)
+        inputs = self._preprocess_inputs(inputs)
 
         # measure eigenfeatures
-        return self._measure_layer_eigenfeatures(inputs, weights, by_stride, centered=centered, with_updates=with_updates)
+        return self._measure_layer_eigenfeatures(inputs, weights, centered=centered, with_updates=with_updates)
     
 
-    def measure_class_eigenfeatures(self, dataloader, eigenvectors, rms=False, with_updates=True, by_stride=True):
+    def measure_class_eigenfeatures(self, dataloader, eigenvectors, rms=False, with_updates=True):
         """
         propagate an entire dataset through the network and measure the contribution
         of each eigenvector to each element of the class
@@ -621,10 +580,10 @@ class AlignmentNetwork(nn.Module, ABC):
 
         # measure the contribution of each eigenvector on the representation of each input
         beta_activity = []
-        inputs = self._preprocess_inputs(inputs, by_stride=by_stride)
+        inputs = self._preprocess_inputs(inputs)
         zipped = zip(inputs, eigenvectors, self.get_alignment_layers(), self.get_alignment_metaparameters())
         for input, evec, layer, metaprm in zipped:
-            if by_stride and metaprm['unfold']:
+            if metaprm['unfold']:
                 stride_var = torch.var(input, dim=1, keepdim=True)
                 projection = torch.matmul(evec.T, input)
                 projection = weighted_average(projection, stride_var, dim=2)
@@ -643,16 +602,14 @@ class AlignmentNetwork(nn.Module, ABC):
         return beta_by_class
     
 
-    def _measure_layer_eigenfeatures(self, inputs, weights, by_stride, centered=True, with_updates=True):
+    def _measure_layer_eigenfeatures(self, inputs, weights, centered=True, with_updates=True):
         """
         helper method for measuring eigenfeatures of each layer
 
         input should be preprocessed weights (see _preprocess_inputs())
         weights should be preprocessed weights (in the case of convolutional layers, see get_alignment_weights())
         
-        if by_stride, will measure for each stride of convolutional layers then average stride weighted by variance
-        if by_stride=False, expects fully unfolded and flattened inputs and weights
-        if centered=True, will use standard covariance, if False will not center!!
+        will measure for each stride of convolutional layers then average stride weighted by variance
         """
         beta, eigenvalues, eigenvectors = [], [], []
         
@@ -660,16 +617,14 @@ class AlignmentNetwork(nn.Module, ABC):
         zipped = enumerate(zip(inputs, weights, self.get_alignment_metaparameters()))
         iterate = tqdm(zipped) if with_updates else zipped
         for ii, (input, weight, metaprm) in iterate:
-            if metaprm['unfold'] and not by_stride:
-                warn(f"It is not recommended to use by_stride=False for measuring eigenfeatures, this code is not ready and it might never be a good idea.", stacklevel=2)
-
-            # if a convolutional layer and working by_stride, then:
-            if by_stride and metaprm['unfold']:
+            
+            # if a convolutional layer, then:
+            if metaprm['unfold']:
                 # measure variance across dimensions (the actual variance within each stride)
                 # then take average across batch
                 bvar = torch.mean(torch.var(input, dim=1), dim=0) 
                 
-                # get eigenvalues and eigenvectors for each stride
+                # get eigenvalues and eigenvectors for each stride (treat stride as batch dimension here)
                 w, v = smart_pca(input.permute((2, 1, 0)), centered=centered)
                 
                 # Measure abs value of dot product of weights on eigenvectors for each layer
@@ -687,7 +642,9 @@ class AlignmentNetwork(nn.Module, ABC):
                 eigenvalues.append(w_weighted_by_var)
                 eigenvectors.append(v_weighted_by_var)
 
+            # if a linear layer, then:
             else:
+                # measure evals and evecs across input
                 w, v = smart_pca(input.T, centered=centered)
 
                 # Measure abs value of dot product of weights on eigenvectors for each layer

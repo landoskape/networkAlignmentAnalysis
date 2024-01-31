@@ -90,8 +90,8 @@ class AlignmentStatistics(Experiment):
         print('measuring eigenfeatures...')
         beta, eigvals, eigvecs, class_betas = [], [], [], []
         for net in tqdm(nets):
-            eigenfeatures = net.measure_eigenfeatures(dataset.test_loader, with_updates=False, by_stride=self.args.by_stride)
-            beta_by_class = net.measure_class_eigenfeatures(dataset.test_loader, eigenfeatures[2], rms=False, with_updates=False, by_stride=self.args.by_stride)
+            eigenfeatures = net.measure_eigenfeatures(dataset.test_loader, with_updates=False)
+            beta_by_class = net.measure_class_eigenfeatures(dataset.test_loader, eigenfeatures[2], rms=False, with_updates=False)
             beta.append(eigenfeatures[0])
             eigvals.append(eigenfeatures[1])
             eigvecs.append(eigenfeatures[2])
@@ -102,7 +102,7 @@ class AlignmentStatistics(Experiment):
 
         # do targeted dropout experiment
         print('performing targeted eigenvector dropout...')
-        evec_dropout_parameters = dict(num_drops=self.args.num_drops, by_layer=self.args.dropout_by_layer, by_stride=self.args.by_stride)
+        evec_dropout_parameters = dict(num_drops=self.args.num_drops, by_layer=self.args.dropout_by_layer, )
         evec_dropout_results = train.eigenvector_dropout(nets, dataset, eigvals, eigvecs, **evec_dropout_parameters)
         
         # make full results dictionary
@@ -177,9 +177,6 @@ class AlignmentStatistics(Experiment):
             num_epochs=self.args.epochs,
             alignment=True,
             delta_weights=False,
-            average_correlation=False,
-            full_correlation=False,
-            by_stride=self.args.by_stride,
         )
 
         if self.args.use_prev & os.path.isfile(self.get_checkpoint_path()):

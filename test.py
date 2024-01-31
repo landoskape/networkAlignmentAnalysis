@@ -24,7 +24,7 @@ if __name__ == '__main__':
 
     # get network
     net_args = dict(
-        ignore_flag=False
+        ignore_flag=False,
     )
 
     net = get_model(args.network, build=True, **net_args).to(DEVICE)
@@ -34,12 +34,12 @@ if __name__ == '__main__':
 
     # results = train.train([net], [optim], dataset, train_set=True, num_epochs=50, alignment=False)
 
-    betas, eigenvalues, eigenvectors = net.measure_eigenfeatures(dataset.test_loader, by_stride=True)
+    betas, eigenvalues, eigenvectors = net.measure_eigenfeatures(dataset.test_loader)
 
     # out = net.measure_class_eigenfeatures(dataset.test_loader, eigenvectors, rms=False, with_updates=True)
 
     dropout_results = train.eigenvector_dropout([net], dataset, [eigenvalues], [eigenvectors], 
-                                                train_set=False, by_stride=True, by_layer=True)
+                                                train_set=False, by_layer=False)
 
     # results = {
     #     'progdrop_loss_high': progdrop_loss_high / num_batches,
