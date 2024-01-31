@@ -9,7 +9,7 @@ from tqdm import tqdm
 
 import torch
 import torchvision 
-from torchvision import transforms
+from torchvision.transforms import v2 as transforms
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim

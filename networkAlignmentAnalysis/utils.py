@@ -6,7 +6,7 @@ from scipy.linalg import null_space
 from sklearn.decomposition import IncrementalPCA
 import torch
 from matplotlib import pyplot as plt
-from torchvision import transforms
+from torchvision.transforms import v2 as transforms
 
 
 # -- deprecation block --

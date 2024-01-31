@@ -5,7 +5,7 @@ import numpy as np
 import torch
 import torchvision
 from torch import nn
-from torchvision import transforms
+from torchvision.transforms import v2 as transforms
 
 from . import files
 from .models.base import AlignmentNetwork
