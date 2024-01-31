@@ -39,8 +39,10 @@ class Net(nn.Module):
 
 def check_time(num_workers, batch_size, pin_memory, fast_loader):
     transform = transforms.Compose(
-        [transforms.ToTensor(),
-        transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))])
+            transforms.ToImage(),
+            transforms.ToDtype(torch.float32, scale=True),
+            transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))
+        )
 
     trainset = torchvision.datasets.CIFAR10(root=files.data_path(), train=True,
                                             download=False, transform=transform)

@@ -157,7 +157,8 @@ class MNIST(DataSet):
         # default transforms
         use_transforms = [
             # Convert PIL Image to PyTorch Tensor
-            transforms.ToTensor(), 
+            transforms.ToImage(),
+            transforms.ToDtype(torch.float32, scale=True),
             # Normalize inputs to canonical distribution
             transforms.Normalize((self.dist_params['mean'],), (self.dist_params['std'],)), 
             ]
@@ -199,7 +200,8 @@ class CIFAR10(DataSet):
         # default transforms
         use_transforms = [
             # Convert PIL Image to PyTorch Tensor
-            transforms.ToTensor(), 
+            transforms.ToImage(),
+            transforms.ToDtype(torch.float32, scale=True),
             # Normalize inputs to canonical distribution
             transforms.Normalize((self.dist_params['mean']), (self.dist_params['std'])), 
             ]
@@ -258,7 +260,8 @@ class ImageNet2012(DataSet):
         """
         # default transforms
         use_transforms = [
-            transforms.ToTensor(),
+            transforms.ToImage(),
+            transforms.ToDtype(torch.float32, scale=True),
             transforms.CenterCrop(self.center_crop),
             transforms.Normalize((self.dist_params['mean']),
                                  (self.dist_params['std'])),
