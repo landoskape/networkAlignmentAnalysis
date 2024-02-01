@@ -24,8 +24,6 @@ def train(nets, optimizers, dataset, **parameters):
     use_train = parameters.get('train_set', True)
     dataloader = dataset.train_loader if use_train else dataset.test_loader
     num_steps = len(dataset.train_loader)*parameters['num_epochs']
-    # track_loss = torch.zeros((num_steps, num_nets))
-    # track_accuracy = torch.zeros((num_steps, num_nets))
 
     # --- optional analyses ---
     measure_alignment = parameters.get('alignment', True)
