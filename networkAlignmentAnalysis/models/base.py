@@ -538,7 +538,7 @@ class AlignmentNetwork(nn.Module, ABC):
         inputs, _ = self._process_collect_activity(dataloader, with_updates=with_updates, use_training_mode=False)
         
         # retrieve weights, reshape, and flatten inputs as required
-        weights = self.get_alignment_weights(flatten=True, inputs=inputs)
+        weights = self.get_alignment_weights(flatten=True)
         inputs = self._preprocess_inputs(inputs)
 
         # measure eigenfeatures
