@@ -1,5 +1,4 @@
 import os
-
 import matplotlib as mpl
 import numpy as np
 import torch
@@ -12,9 +11,7 @@ from ..models.registry import get_model
 from ..utils import (compute_stats_by_type, 
                      load_checkpoints, 
                      named_transpose,
-                     rms, 
                      transpose_list,
-                     str2bool,
                      rms)
 from .experiment import Experiment
 
@@ -51,8 +48,7 @@ class AlignmentStatistics(Experiment):
         parser.add_argument('--epochs', type=int, default=100, help='how many epochs to train the networks on')
         parser.add_argument('--replicates', type=int, default=5, help='how many replicates of networks to train') 
         parser.add_argument('--ignore-flag', default=False, action='store_true', help='if used, will omit flagged layers in analyses')
-        parser.add_argument('--by-stride', default=True, type=str2bool, help='whether or not to analyze convolutional layers by stride')
-
+       
         # checkpointing parameters
         parser.add_argument('--use_prev', default=False, action='store_true', help='if used, will pick up training off previous checkpoint')
         parser.add_argument('--save_ckpts', default=False, action='store_true', help='if used, will save checkpoints of models')
@@ -69,7 +65,7 @@ class AlignmentStatistics(Experiment):
         do supplementary analyses
         """
         # load networks 
-        nets, optimizers = self.load_networks()
+        nets, optimizers, prms = self.load_networks()
 
         # load dataset
         dataset = get_dataset(self.args.dataset,
@@ -107,6 +103,7 @@ class AlignmentStatistics(Experiment):
         
         # make full results dictionary
         results = dict(
+            prms=prms,
             train_results=train_results,
             test_results=test_results,
             dropout_results=dropout_results,
@@ -124,18 +121,11 @@ class AlignmentStatistics(Experiment):
         """
         main plotting loop
         """
-        self.plot_train_results(results['train_results'], 
-                                results['test_results'])
-        
-        self.plot_dropout_results(results['dropout_results'], 
-                                  results['dropout_parameters'], 
-                                  dropout_type='nodes')
-        
-        self.plot_eigenfeatures(results['eigen_results'])
+        self.plot_train_results(results['train_results'], results['test_results'], results['prms'])
+        self.plot_dropout_results(results['dropout_results'], results['dropout_parameters'], results['prms'], dropout_type='nodes')
+        self.plot_eigenfeatures(results['eigen_results'], results['prms'])
+        self.plot_dropout_results(results['evec_dropout_results'], results['evec_dropout_parameters'], results['prms'], dropout_type='eigenvectors')
 
-        self.plot_dropout_results(results['evec_dropout_results'], 
-                                  results['evec_dropout_parameters'], 
-                                  dropout_type='eigenvectors')
 
     # ----------------------------------------------
     # ------ methods for main experiment loop ------
@@ -165,8 +155,16 @@ class AlignmentStatistics(Experiment):
                             lr=self.args.default_lr, 
                             weight_decay=self.args.default_wd)
                       for net in nets]
-        
-        return nets, optimizers
+
+        prms = {
+            'vals': [self.args.network], # require iterable for identifying how many types of networks there are (just one type...)
+            'name': 'network',
+            'dataset': self.args.dataset,
+            'dropout': self.args.default_dropout,
+            'lr': self.args.default_lr,
+            'weight_decay': self.args.default_wd,
+        }
+        return nets, optimizers, prms
 
 
     def train_networks(self, nets, optimizers, dataset):
@@ -207,14 +205,14 @@ class AlignmentStatistics(Experiment):
     # ----------------------------------------------
     # ------- methods for main plotting loop -------
     # ----------------------------------------------
-    def plot_train_results(self, train_results, test_results):
+    def plot_train_results(self, train_results, test_results, prms):
         """
         plotting method for training trajectories and testing data
         """
 
         num_train_epochs = train_results['loss'].size(0)
-        num_types = 1
-        labels = [f"{self.args.network}"]
+        num_types = len(prms['vals'])
+        labels = [f"{prms['name']}={val}" for val in prms['vals']]
 
         print("getting statistics on run data...")
         alignment = torch.stack([torch.mean(align, dim=2) for align in train_results['alignment']])
@@ -316,9 +314,9 @@ class AlignmentStatistics(Experiment):
         self.plot_ready('train_alignment_by_layer')
 
 
-    def plot_dropout_results(self, dropout_results, dropout_parameters, dropout_type='nodes'):
-        num_types = 1
-        labels = [f"{self.args.network} - dropout {dropout_type}"]
+    def plot_dropout_results(self, dropout_results, dropout_parameters, prms, dropout_type='nodes'):
+        num_types = len(prms['vals'])
+        labels = [f"{prms['name']}={val} - dropout {dropout_type}" for val in prms['vals']]
         cmap = mpl.colormaps['Set1']
         alpha = 0.3
         msize = 10
@@ -413,14 +411,14 @@ class AlignmentStatistics(Experiment):
         self.plot_ready('prog_dropout_'+extra_name+'_accuracy')
 
 
-    def plot_eigenfeatures(self, results):
+    def plot_eigenfeatures(self, results, prms):
         """method for plotting results related to eigen-analysis"""
         beta, eigvals, class_betas, class_names = results['beta'], results['eigvals'], results['class_betas'], results['class_names']
         beta = [[torch.abs(b) for b in net_beta] for net_beta in beta]
         class_betas = [[rms(cb, dim=2) for cb in net_class_beta] for net_class_beta in class_betas]
 
         num_types = 1
-        labels = [f"{self.args.network}"]
+        labels = [f"{prms['name']}={val}" for val in prms['vals']]
         cmap = mpl.colormaps['tab10']
         class_cmap = mpl.colormaps['viridis'].resampled(len(class_names))
 
