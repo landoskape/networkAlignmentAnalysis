@@ -417,7 +417,7 @@ class AlignmentStatistics(Experiment):
         beta = [[torch.abs(b) for b in net_beta] for net_beta in beta]
         class_betas = [[rms(cb, dim=2) for cb in net_class_beta] for net_class_beta in class_betas]
 
-        num_types = 1
+        num_types = len(prms['vals'])
         labels = [f"{prms['name']}={val}" for val in prms['vals']]
         cmap = mpl.colormaps['tab10']
         class_cmap = mpl.colormaps['viridis'].resampled(len(class_names))
@@ -433,7 +433,6 @@ class AlignmentStatistics(Experiment):
         beta = [b / b.sum(dim=2, keepdim=True) for b in beta]
         eigvals = [ev / ev.sum(dim=1, keepdim=True) for ev in eigvals]
         class_betas = [cb / cb.sum(dim=2, keepdim=True) for cb in class_betas]
-
 
         # reuse these a few times
         statprms = lambda method: dict(num_types=num_types, dim=0, method=method)
@@ -515,39 +514,26 @@ class AlignmentStatistics(Experiment):
         self.plot_ready('eigenfeatures_loglog')
 
 
-        fig, ax = plt.subplots(2, num_layers, figsize=(num_layers*figdim, figdim*2), layout='constrained')
+        fig, ax = plt.subplots(num_types, num_layers, figsize=(num_layers*figdim, figdim*2), layout='constrained')
         for layer in range(num_layers):
             num_input = mean_evals[layer].size(1)
-            for idx, label in enumerate(labels):
-                mn_ev = mean_evals[layer][idx]
-                se_ev = var_evals[layer][idx]
-                # plot eigenvalues of each eigenvector
-                ax[0, layer].plot(range(num_input), mn_ev, color=cmap(idx), linestyle='--', label='eigvals' if idx==0 else None)
-                ax[1, layer].plot(range(num_input), mn_ev, color=cmap(idx), linestyle='--', label='eigvals' if idx==0 else None)
-
+            for idx, label in enumerate(labels):                
                 for idx_class, class_name in enumerate(class_names):
                     mn_data = mean_class_beta[layer][idx][idx_class]
                     se_data = se_class_beta[layer][idx][idx_class]
-                    ax[0, layer].plot(range(num_input), mn_data, color=class_cmap(idx_class), label=class_name)
-                    ax[0, layer].fill_between(range(num_input), mn_data+se_data, mn_data-se_data, color=(class_cmap(idx_class), alpha))
-                    ax[1, layer].plot(range(num_input), mn_data, color=class_cmap(idx_class), label=class_name)
-                    ax[1, layer].fill_between(range(num_input), mn_data+se_data, mn_data-se_data, color=(class_cmap(idx_class), alpha))
+                    ax[idx, layer].plot(range(num_input), mn_data, color=class_cmap(idx_class), label=class_name)
+                    ax[idx, layer].fill_between(range(num_input), mn_data+se_data, mn_data-se_data, color=(class_cmap(idx_class), alpha))
+                    
+                ax[idx, layer].set_xscale('log')
+                ax[idx, layer].set_yscale('linear')
+                ax[idx, layer].set_xlabel('Input Dimension')
+                if layer==0:
+                    ax[idx, layer].set_ylabel(f"{label}\nClass Loading (RMS)")
+                if idx==0:
+                    ax[idx, layer].set_title(f"Layer {layer}")
                 
-                ax[0, layer].set_xscale('log')
-                ax[1, layer].set_xscale('log')
-                ax[1, layer].set_yscale('log')
-                ax[0, layer].set_xlabel('Input Dimension')
-                ax[1, layer].set_xlabel('Sorted Input Dim')
-                ax[0, layer].set_ylabel('Relative Eigval & Class Loading (RMS)')
-                ax[1, layer].set_ylabel('Relative Class Loading (RMS)')
-                ax[0, layer].set_title(f"Layer {layer}")
-                ax[1, layer].set_title(f"Layer {layer}")
-
                 if layer==num_layers-1:
-                    ax[0, layer].legend(loc='best', fontsize=8)
-                    ax[1, layer].legend(loc='best', fontsize=8)
+                    ax[idx, layer].legend(loc='upper right', fontsize=6)
 
         self.plot_ready('class_eigenfeatures')
 
-
-        
