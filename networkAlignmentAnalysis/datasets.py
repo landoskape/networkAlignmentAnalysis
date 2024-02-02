@@ -1,13 +1,14 @@
-from abc import ABC, abstractmethod 
-import torch
-from torch import nn
-import torchvision 
-from torchvision import transforms
 import multiprocessing
+from abc import ABC, abstractmethod
+
+import numpy as np
+import torch
+import torchvision
+from torch import nn
+from torchvision.transforms import v2 as transforms
 
 from . import files
 from .models.base import AlignmentNetwork
-
 
 REQUIRED_PROPERTIES = ['dataset_path', 'dataset_constructor', 'loss_function']
 
@@ -32,7 +33,7 @@ class DataSet(ABC):
         self.check_properties() 
 
         # define device for dataloading
-        self.device = device if device is not None else 'cuda' if torch.cuda.is_available() else 'cpu'
+        self.device = device if device is not None else ('cuda' if torch.cuda.is_available() else 'cpu')
 
         # define extra transform (should be a callable method or None) for any transformations that 
         # can't go in the torchvision.transforms.Compose(...), hopefully this won't be needed later 
@@ -156,7 +157,8 @@ class MNIST(DataSet):
         # default transforms
         use_transforms = [
             # Convert PIL Image to PyTorch Tensor
-            transforms.ToTensor(), 
+            transforms.ToImage(),
+            transforms.ToDtype(torch.float32, scale=True),
             # Normalize inputs to canonical distribution
             transforms.Normalize((self.dist_params['mean'],), (self.dist_params['std'],)), 
             ]
@@ -198,7 +200,8 @@ class CIFAR10(DataSet):
         # default transforms
         use_transforms = [
             # Convert PIL Image to PyTorch Tensor
-            transforms.ToTensor(), 
+            transforms.ToImage(),
+            transforms.ToDtype(torch.float32, scale=True),
             # Normalize inputs to canonical distribution
             transforms.Normalize((self.dist_params['mean']), (self.dist_params['std'])), 
             ]
@@ -232,10 +235,63 @@ class CIFAR100(CIFAR10):
         self.dist_params = dict(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5])
 
 
+class ImageNet2012(DataSet):
+    def set_properties(self):
+        """
+        defines the required properties for ImageNet 2012 (ILSVRC2012) with
+        1000 classes.
+        preprocessing according to pytorch documentation:
+        https://pytorch.org/hub/pytorch_vision_alexnet/
+        """
+        self.dataset_path = files.dataset_path("ImageNet")
+        self.dataset_constructor = torchvision.datasets.ImageNet
+        self.loss_function = nn.CrossEntropyLoss()
+        self.dist_params = dict(mean=[0.485, 0.456, 0.406],
+                                std=[0.229, 0.224, 0.225])
+        self.center_crop = 224
+
+    def make_transform(self, resize=256, flatten=False):
+        """
+        Create transform for dataloader.
+        resize is the new (H, W) shape of the image for the transforms. Resize
+        transform (or None).
+        flatten is a boolean indicating whether to flatten the image, (i.e.
+        for a linear input layer)
+        """
+        # default transforms
+        use_transforms = [
+            transforms.ToImage(),
+            transforms.ToDtype(torch.float32, scale=True),
+            transforms.CenterCrop(self.center_crop),
+            transforms.Normalize((self.dist_params['mean']),
+                                 (self.dist_params['std'])),
+        ]
+
+        # extra transforms depending on network
+        if resize:
+            use_transforms.append(transforms.Resize(resize))
+        if flatten:
+            use_transforms.append(transforms.Lambda(torch.flatten))
+
+        # store composed transformation
+        self.transform = transforms.Compose(use_transforms)
+
+    def dataset_kwargs(self, train=True):
+        """set data constructor kwargs for ImageNet2012"""
+        kwargs = dict(
+            split='train' if train else 'val',
+            root=self.dataset_path,
+            transform=self.transform,
+        )
+        return kwargs
+    
+
+
 DATASET_REGISTRY = {
     'MNIST': MNIST,
     'CIFAR10': CIFAR10,
     'CIFAR100': CIFAR100,
+    'ImageNet': ImageNet2012,
 }
 
 def get_dataset(dataset_name, build=False, transform_parameters={}, loader_parameters={}, **kwargs):

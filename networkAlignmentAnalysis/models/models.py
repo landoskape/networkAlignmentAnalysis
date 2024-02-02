@@ -1,7 +1,10 @@
 from torch import nn
-from .base import AlignmentNetwork
-from .layers import default_metaprms_conv2d, default_metaprms_ignore, default_metaprms_linear
 from torchvision.models import alexnet as torch_alexnet
+
+from .base import AlignmentNetwork
+from .layers import (default_metaprms_conv2d, default_metaprms_ignore,
+                     default_metaprms_linear)
+
 
 class MLP(AlignmentNetwork):
     """
@@ -45,6 +48,9 @@ class MLP(AlignmentNetwork):
                 'flatten': True,
                 'resize': None,
             },
+            'ImageNet': {
+                'flatten': True,
+            },
         }
         if dataset not in params: 
             raise ValueError(f"Dataset ({dataset}) is not in params dictionary: {[k for k in params]}")
@@ -61,32 +67,47 @@ class CNN2P2(AlignmentNetwork):
                    in_channels=1, 
                    output_dim=10, 
                    channels=[32, 64],
-                   kernel_size=[3, 3],
-                   stride=[2, 2],
-                   padding=[1, 1],
-                   num_hidden=[256, 256],
-                   dropout=0.5, 
-                   each_stride=True, 
+                   kernel_size=[5, 5],
+                   stride=[1, 1],
+                   padding=[2, 2],
+                   num_hidden=[3136, 128],
+                   dropout=0.5,
                    flag=True):
         """architecture definition"""
 
         for val, name in zip((channels, kernel_size, stride, padding), ('channels', 'kernel_size', 'stride', 'padding')):
             assert len(val)==2, f"{name} must be 2 elements describing the parameter for each of two convolutional layers"
         assert len(num_hidden)==2, "num_hidden must be 2 elements describing the number of hidden for each of two feedforward layers"
-        layer1 = nn.Sequential(nn.Conv2d(in_channels, channels[0], kernel_size=kernel_size[0], stride=stride[0], padding=padding[0]), nn.ReLU())
-        layer2 = nn.Sequential(nn.Conv2d(channels[0], channels[1], kernel_size=kernel_size[1], stride=stride[1], padding=padding[1]), 
-                               nn.ReLU(), nn.MaxPool2d(kernel_size=3), nn.Flatten(start_dim=1))
-        layer3 = nn.Sequential(nn.Dropout(p=dropout), nn.Linear(num_hidden[0], num_hidden[1]), nn.ReLU())
-        layer4 = nn.Sequential(nn.Dropout(p=dropout), nn.Linear(num_hidden[1], output_dim))
+        
+        # create layers
+        layer1 = nn.Sequential(
+            nn.Conv2d(in_channels, channels[0], kernel_size=kernel_size[0], stride=stride[0], padding=padding[0]), 
+            nn.ReLU(),
+            nn.MaxPool2d(2, stride=2),
+            )
+        layer2 = nn.Sequential(
+            nn.Conv2d(channels[0], channels[1], kernel_size=kernel_size[1], stride=stride[1], padding=padding[1]), 
+            nn.ReLU(), 
+            nn.MaxPool2d(2, stride=2), 
+            nn.Flatten(start_dim=1),
+            )
+        layer3 = nn.Sequential(
+            nn.Dropout(p=dropout), 
+            nn.Linear(num_hidden[0], num_hidden[1]), 
+            nn.ReLU(),
+            )
+        layer4 = nn.Sequential(
+            nn.Dropout(p=dropout), 
+            nn.Linear(num_hidden[1], output_dim),
+            )
 
-        self.register_layer(layer1, **default_metaprms_conv2d(0, each_stride=each_stride, flag=flag))
-        self.register_layer(layer2, **default_metaprms_conv2d(0, each_stride=each_stride, flag=flag))
+        self.register_layer(layer1, **default_metaprms_conv2d(0, flag=flag))
+        self.register_layer(layer2, **default_metaprms_conv2d(0, flag=flag))
         self.register_layer(layer3, **default_metaprms_linear(1))
         self.register_layer(layer4, **default_metaprms_linear(1))
 
         # add these parameters as attributes for easy lookup later
         self.dropout = dropout
-        self.each_stride = each_stride
 
     def get_transform_parameters(self, dataset):
         """CNN2P2 specific transformations for each dataset"""
@@ -103,6 +124,9 @@ class CNN2P2(AlignmentNetwork):
                 'flatten': False,
                 'resize': None,
             },
+            'ImageNet': {
+                'flatten': False,
+            }
         }
         if dataset not in params: 
             raise ValueError(f"Dataset ({dataset}) is not in params dictionary: {[k for k in params]}")
@@ -143,7 +167,7 @@ class AlexNet(AlignmentNetwork):
       )
     )
     """
-    def initialize(self, dropout=0.5, num_classes=1000, weights=None, each_stride=True):
+    def initialize(self, dropout=0.5, num_classes=1000, weights=None, flag=True):
         """architecture definition"""
 
         # start by loading the architecture of alexnet along with pretrained weights (if requested)
@@ -170,18 +194,17 @@ class AlexNet(AlignmentNetwork):
         layer7 = nn.Sequential(alexnet.classifier[3], alexnet.classifier[4], alexnet.classifier[5])
         layer8 = nn.Sequential(output_layer)
         
-        self.register_layer(layer1, **default_metaprms_conv2d(0, each_stride=each_stride))
-        self.register_layer(layer2, **default_metaprms_conv2d(0, each_stride=each_stride))
-        self.register_layer(layer3, **default_metaprms_conv2d(0, each_stride=each_stride))
-        self.register_layer(layer4, **default_metaprms_conv2d(0, each_stride=each_stride))
-        self.register_layer(layer5, **default_metaprms_conv2d(0, each_stride=each_stride))
+        self.register_layer(layer1, **default_metaprms_conv2d(0, flag=flag))
+        self.register_layer(layer2, **default_metaprms_conv2d(0, flag=flag))
+        self.register_layer(layer3, **default_metaprms_conv2d(0, flag=flag))
+        self.register_layer(layer4, **default_metaprms_conv2d(0, flag=flag))
+        self.register_layer(layer5, **default_metaprms_conv2d(0, flag=flag))
         self.register_layer(layer6, **default_metaprms_linear(1))
         self.register_layer(layer7, **default_metaprms_linear(1))
         self.register_layer(layer8, **default_metaprms_linear(0))
 
         # add these parameters as attributes for easy lookup later
         self.dropout = dropout
-        self.each_stride = each_stride
 
         # set dropout with general method so we can easily use each alexnet.features/classifier/etc
         self.set_dropout(dropout)
@@ -206,6 +229,10 @@ class AlexNet(AlignmentNetwork):
                 'flatten': False,
                 'resize': (224, 224),
             },
+            'ImageNet': {
+                'flatten': False,
+                'resize': (256, 256),
+            }
         }
         if dataset not in params: 
             raise ValueError(f"Dataset ({dataset}) is not in params dictionary: {[k for k in params]}")

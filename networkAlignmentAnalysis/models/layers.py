@@ -1,7 +1,5 @@
-import torch
 from torch import nn
 from .. import utils
-from functools import partial
 
 # The LAYER_REGISTRY contains meta parameters for each type of layer used in alignment networks
 # each layer type is associated with a few features, including:
@@ -29,9 +27,9 @@ from functools import partial
 # requirements in any layer's metaparameters
 REGISTRY_REQUIREMENTS = [
     'name', 
+    'layer_index',
     'layer_handle', 
     'alignment_method', 
-    'correlation_method', 
     'unfold', 
     'ignore', 
     'flag',
@@ -41,9 +39,9 @@ REGISTRY_REQUIREMENTS = [
 LAYER_REGISTRY = {
     nn.Linear: {
         'name': 'linear', 
+        'layer_index': None,
         'layer_handle': lambda layer:layer, 
         'alignment_method': utils.alignment_linear,
-        'correlation_method': utils.correlation_linear,
         'unfold': False,
         'ignore': False,
         'flag': False,
@@ -51,9 +49,9 @@ LAYER_REGISTRY = {
 
     nn.Conv2d: {
         'name': 'conv2d', 
+        'layer_index': None, 
         'layer_handle': lambda layer:layer, 
         'alignment_method': utils.alignment_convolutional,
-        'correlation_method': utils.correlation_convolutional,
         'unfold': True,
         'ignore': False,
         'flag': True,
@@ -65,9 +63,9 @@ def default_metaprms_ignore(name):
     """convenience method for named metaparameters to be ignored"""
     metaparameters = {
         'name': name,
+        'layer_index': None,
         'layer_handle': None,
         'alignment_method': None,
-        'correlation_method': None, 
         'unfold': False,
         'ignore': True,
         'flag': True,
@@ -78,24 +76,22 @@ def default_metaprms_linear(index, name='linear', flag=False):
     """convenience method for named metaparameters in a linear layer packaged in a sequential"""
     metaparameters = {
         'name': name,
+        'layer_index': index,
         'layer_handle': lambda layer: layer[index],
         'alignment_method': utils.alignment_linear,
-        'correlation_method': utils.correlation_linear,
         'unfold': False, 
         'ignore': False,
         'flag': flag,
     }
     return metaparameters
 
-def default_metaprms_conv2d(index, name='conv2d', each_stride=True, flag=True):
+def default_metaprms_conv2d(index, name='conv2d', flag=True):
     """convenience method for named metaparameters in a conv2d layer packaged in a sequential"""
-    alignment_method = partial(utils.alignment_convolutional, each_stride=each_stride)
-    correlation_method = partial(utils.correlation_convolutional, each_stride=each_stride)
     metaparameters = {
         'name': name,
+        'layer_index': index,
         'layer_handle': lambda layer: layer[index],
-        'alignment_method': alignment_method,
-        'correlation_method': correlation_method,
+        'alignment_method': utils.alignment_convolutional,
         'unfold': True, 
         'ignore': False,
         'flag': flag,

@@ -4,7 +4,8 @@ import torch
 import torch.nn.functional as F
 from torch import nn
 import tools.alignmentAnalysisTools as aat
-from torchvision import models, transforms
+from torchvision import models
+from torchvision.transforms import v2 as transforms
 
 class CNN2P2(nn.Module):
     """

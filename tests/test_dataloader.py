@@ -9,7 +9,7 @@ from tqdm import tqdm
 
 import torch
 import torchvision 
-from torchvision import transforms
+from torchvision.transforms import v2 as transforms
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
@@ -39,8 +39,10 @@ class Net(nn.Module):
 
 def check_time(num_workers, batch_size, pin_memory, fast_loader):
     transform = transforms.Compose(
-        [transforms.ToTensor(),
-        transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))])
+            transforms.ToImage(),
+            transforms.ToDtype(torch.float32, scale=True),
+            transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))
+        )
 
     trainset = torchvision.datasets.CIFAR10(root=files.data_path(), train=True,
                                             download=False, transform=transform)

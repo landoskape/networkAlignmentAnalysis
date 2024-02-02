@@ -1,8 +1,12 @@
 from typing import List
+from contextlib import contextmanager
+from functools import wraps
 import numpy as np
+from scipy.linalg import null_space
+from sklearn.decomposition import IncrementalPCA
 import torch
 from matplotlib import pyplot as plt
-from torchvision import transforms
+from torchvision.transforms import v2 as transforms
 
 
 # -- deprecation block --
@@ -15,9 +19,82 @@ def avg_align_by_layer(full):
 def align_by_layer(full, layer):
     warn("align_by_layer is deprecated, change to value_by_layer!", DeprecationWarning, stacklevel=2)
     return value_by_layer(full, layer)
+
+def alignment_conv_look(processed_activity, layer, stride, grid, method='alignment'):
+    warn("alignment_conv_look is deprecated. no longer necessary to use!", DeprecationWarning, stacklevel=2)
+    # Take (NI, C, H, W) (preprocessed) input activity
+    # And compute the similarity for one "look" e.g. one position of the convolutional filter
+    num_images = processed_activity.shape[0]
+    num_elements = processed_activity.shape[1] * layer.kernel_size[0] * layer.kernel_size[1]
+    h_idx = grid[0] + stride[0]*layer.stride[0]
+    w_idx = grid[1] + stride[1]*layer.stride[1]
+    aligned_input = processed_activity[:, :, h_idx, w_idx].reshape(num_images, num_elements)
+    aligned_weights = layer.weight.data.reshape(layer.out_channels, num_elements).detach()
+    stride_variance = torch.mean(torch.var(aligned_input, dim=1))
+    return alignment(aligned_input, aligned_weights, method=method), stride_variance
 # ------------------------
 
 
+# -------------- context managers & decorators --------------
+@contextmanager
+def no_grad(no_grad=True):
+    if no_grad:
+        with torch.no_grad():
+            yield
+    else:
+        yield
+
+def test_nets(func):
+    @wraps(func)
+    def wrapper(nets, *args, **kwargs):
+        # get original training mode and set to eval
+        in_training_mode = [set_net_mode(net, training=False) for net in nets]
+
+        # do decorated function
+        func_outputs = func(nets, *args, **kwargs)
+
+        # return networks to whatever mode they used to be in 
+        for train_mode, net in zip(in_training_mode, nets):
+            set_net_mode(net, training=train_mode)
+
+        # return decorated function outputs
+        return func_outputs
+    
+    # return decorated function
+    return wrapper
+
+def train_nets(func):
+    @wraps(func)
+    def wrapper(nets, *args, **kwargs):
+        # get original training mode and set to train
+        in_training_mode = [set_net_mode(net, training=True) for net in nets]
+
+        # do decorated function
+        func_outputs = func(nets, *args, **kwargs)
+
+        # return networks to whatever mode they used to be in 
+        for train_mode, net in zip(in_training_mode, nets):
+            set_net_mode(net, training=train_mode)
+
+        # return decorated function outputs
+        return func_outputs
+    
+    # return decorated function
+    return wrapper
+
+def set_net_mode(net, training=True):
+    """helper for setting mode of network and returning current mode"""
+    # get current mode of network
+    in_training_mode = net.training
+    # set to training mode or evaluation mode
+    if training:
+        net.train()
+    else:
+        net.eval()
+    # return original mode of network
+    return in_training_mode
+
+# ------- some other things -------
 def get_device(obj):
     """simple method to get device of input tensor or nn.Module"""
     if isinstance(obj, torch.nn.Module):
@@ -36,6 +113,13 @@ def check_iterable(val):
     else:
         return True
 
+def remove_by_idx(input, idx, dim):
+    """
+    remove part of input indexed by idx on dim
+    """
+    idx_keep = [i for i in range(input.size(dim)) if i not in idx]
+    return torch.index_select(input, dim, torch.tensor(idx_keep).to(input.device))
+
 def smartcorr(input):
     """
     Performs torch corrcoef on the input data but sets each pair-wise correlation coefficent
@@ -47,19 +131,178 @@ def smartcorr(input):
     cc[:,idx_zeros] = 0
     return cc
 
-def batch_cov(input):
+def batch_cov(input, centered=True, correction=True):
     """
-    Performs batched covariance on input data of shape (batch, dim, samples)
+    Performs batched covariance on input data of shape (batch, dim, samples) or (dim, samples)
 
-    Where the resulting batch covariance matrix has shape (batch, dim, dim)
-    and bcov[i] = torch.cov(input[i])
+    Where the resulting batch covariance matrix has shape (batch, dim, dim) or (dim, dim)
+    and bcov[i] = torch.cov(input[i]) if input.ndim==3
+
+    if centered=True (default) will subtract the means first
+
+    if correction=True, will use */(N-1) otherwise will use */N
     """
-    D = input.size(1)
-    centered_input = input - input.mean(dim=2, keepdim=True)
-    bcov = torch.bmm(centered_input, centered_input.transpose(1, 2))
-    bcov /= (D-1)
+    assert (input.ndim == 2) or (input.ndim == 3), "input must be a 2D or 3D tensor"
+    assert isinstance(correction, bool), "correction must be a boolean variable"
+
+    # check if batch dimension was provided
+    no_batch = input.ndim == 2
+    
+    # add an empty batch dimension if not provided
+    if no_batch: 
+        input = input.unsqueeze(0) 
+    
+    # measure number of samples of each input matrix
+    S = input.size(2) 
+    
+    # subtract mean if doing centered covariance
+    if centered:
+        input = input - input.mean(dim=2, keepdim=True)
+
+    # measure covariance of each input matrix
+    bcov = torch.bmm(input, input.transpose(1, 2))
+    
+    # correct for number of samples
+    bcov /= (S - 1.0*correction)
+    
+    # remove empty batch dimension if not provided
+    if no_batch: 
+        bcov = bcov.squeeze(0) 
+
     return bcov
 
+def smart_pca(input, centered=True, use_rank=True, correction=True):
+    """
+    smart algorithm for pca optimized for speed
+
+    input should either have shape (batch, dim, samples) or (dim, samples)
+    if dim > samples, will use svd and if samples < dim will use covariance/eigh method
+
+    will center data when centered=True
+
+    if it fails, will fall back on performing sklearns IncrementalPCA whenever forcetry=True
+    """
+    assert (input.ndim==2) or (input.ndim==3), "input should be a matrix or batched matrices"
+    assert isinstance(correction, bool), "correction should be a boolean"
+
+    if input.ndim==2:
+        no_batch = True
+        input = input.unsqueeze(0) # create batch dimension for uniform code
+    else:
+        no_batch = False
+        
+    _, D, S = input.size()
+    if D > S:
+        # if more dimensions than samples, it's more efficient to run svd
+        v, w, _ = named_transpose([torch.linalg.svd(inp) for inp in input])
+        # convert singular values to eigenvalues
+        w = [ww**2/(S-1.0*correction) for ww in w]
+        # append zeros because svd returns w in R**k where k = min(D, S)
+        w = [torch.concatenate((ww, torch.zeros(D-S))) for ww in w]
+    
+    else:
+        # if more samples than dimensions, it's more efficient to run eigh
+        bcov = batch_cov(input, centered=centered, correction=correction)
+        w, v = named_transpose([eigendecomposition(C, use_rank=use_rank) for C in bcov])
+    
+    # return to stacked tensor across batch dimension
+    w = torch.stack(w)
+    v = torch.stack(v)
+
+    # if no batch originally provided, squeeze out batch dimension
+    if no_batch:
+        w = w.squeeze(0)
+        v = v.squeeze(0)
+
+    # return eigenvalues and eigenvectors
+    return w, v
+
+
+def eigendecomposition(C, use_rank=True):
+    """
+    helper for getting eigenvalues and eigenvectors of covariance matrix
+
+    will measure eigenvalues and eigenvectors with torch.linalg.eigh()
+    the output will be sorted from highest to lowest eigenvalue (& eigenvector)
+
+    if use_rank=True, will measure the rank of the covariance matrix and zero
+    out any eigenvalues beyond the rank (that are usually nonzero numerical errors)
+    """
+    try:
+        # measure eigenvalues and eigenvectors
+        w, v = torch.linalg.eigh(C) 
+
+    except torch._C._LinAlgError as error:
+        # this happens if the algorithm failed to converge
+        # try with sklearn's incrementalPCA algorithm
+        return sklearn_pca(C, use_rank=use_rank)
+    
+    except Exception as error:
+        # if any other exception, raise it
+        raise error
+
+    # sort by eigenvalue from highest to lowest
+    w_idx = torch.argsort(-w)
+    w = w[w_idx]
+    v = v[:, w_idx]
+
+    # iff use_rank=True, will set eigenvalues to 0 for probable numerical errors
+    if use_rank:
+        crank = torch.linalg.matrix_rank(C) # measure rank of covariance
+        w[crank:] = 0 # set eigenvalues beyond rank to 0
+
+    # return eigenvalues and eigenvectors
+    return w, v
+
+def sklearn_pca(input, use_rank=True, rank=None):
+    """
+    sklearn incrementalPCA algorithm serving as a replacement for eigh when it fails
+    
+    input should be a tensor with shape (num_samples, num_features) or it can be a 
+    covariance matrix with (num_features, num_features)
+
+    if use_rank=True, will set num_components to the rank of input and then fill out the
+    rest of the components with random orthogonal components in the null space of the true
+    components and set the eigenvalues to 0
+
+    if use_rank=False, will attempt to fit all the components
+    if rank is not None, will attempt to fit #=rank components without measuring the rank directly
+    (will ignore "rank" if use_rank=False)
+
+    returns w, v where w is eigenvalues and v is eigenvectors sorted from highest to lowest
+    """
+    # dimension
+    num_samples, num_features = input.shape
+
+    # measure rank (or set to None)
+    rank = None if not use_rank else (rank if rank is not None else fast_rank(input))    
+
+    # create and fit IncrementalPCA object on input data
+    ipca = IncrementalPCA(n_components=rank).fit(input)
+
+    # eigenvectors are the components
+    v = ipca.components_
+
+    # eigenvalues are the scaled singular values
+    w = ipca.singular_values_**2 / num_samples
+
+    # if v is a subspace of input (e.g. not a full basis, fill it out)
+    if v.shape[0] < num_features:
+        msg = "adding this because I think it should always be true, and if not I want to find out"
+        assert w.shape[0] == v.shape[0], msg
+        v_kernel = null_space(v).T
+        v = np.vstack((v, v_kernel))
+        w = np.concatenate((w, np.zeros(v_kernel.shape[0])))
+    
+    return torch.tensor(w, dtype=torch.float), torch.tensor(v, dtype=torch.float).T
+
+def fast_rank(input):
+    """uses transpose to speed up rank computation, otherwise normal"""
+    if input.size(-2) < input.size(-1):
+        input = torch.transpose(input, -2, -1)
+    return int(torch.linalg.matrix_rank(input))
+
+# ------------------ alignment functions ----------------------
 def alignment(input, weight, method='alignment'):
     """
     measure alignment (proportion variance explained) between **input** and **weight**
@@ -100,117 +343,36 @@ def alignment(input, weight, method='alignment'):
 
 
 def alignment_linear(activity, layer, method='alignment'):
-    """wrapper for alignment of linear layer"""
+    """wrapper for alignment of linear layer, kwargs for compatibility"""
     return alignment(activity, layer.weight.data, method=method)
 
 
-def alignment_convolutional(activity, layer, each_stride=True, method='alignment'):
+def alignment_convolutional(activity, layer, method='alignment'):
     """
     wrapper for alignment of convolutional layer (for conv2d)
 
-    there are two natural methods - one is to measure the alignment using each 
-    convolutional stride, the second is to measure the alignment of the full 
-    unfolded layer as if it was a matrix multiplication. each_stride determines
-    which one to use. 
-    
-    when each_stride=True, a weighted average of the alignment at each stride is
-    taken where the weights are the variance in the data at that stride. This way,
-    the output is a (num_output_channels, ) shaped tensor regardless of the setting
-    used for each_stride.
+    measures alignment using each convolutional stride then takes a weighted
+    average across strides by the variance in the input data
     """
-    h_max, w_max = get_maximum_strides(activity.shape[2], activity.shape[3], layer)
-    if each_stride:
-        preprocess = transforms.Pad(layer.padding)
-        processed_activity = preprocess(activity)
-        num_looks = h_max * w_max
-        num_channels = layer.out_channels
-        w_idx, h_idx = torch.meshgrid(torch.arange(0, layer.kernel_size[0]), torch.arange(0, layer.kernel_size[1]), indexing='xy')
-        align_layer = torch.zeros((num_channels, num_looks))
-        variance_stride = torch.zeros(num_looks)
-        for h in range(h_max):
-            for w in range(w_max):
-                out_tuple = alignment_conv_look(processed_activity, layer, (h, w), (h_idx, w_idx), method=method)
-                align_layer[:, w + h_max*h], variance_stride[w + h_max*h] = out_tuple
-        
-        # weighted average over variance_stride...
-        align = torch.sum(align_layer * variance_stride.view(1, -1)) / torch.sum(variance_stride)
-        return align
-    else:
-        layer_prms = dict(stride=layer.stride, padding=layer.padding, dilation=layer.dilation)
-        unfolded_input = torch.nn.functional.unfold(activity, layer.kernel_size, **layer_prms)
-        unfolded_input = unfolded_input.transpose(1, 2).reshape(activity.size(0), -1)
-        unfolded_weight = layer.weight.data.view(layer.weight.size(0), -1).repeat(1, h_max*w_max)
-        return alignment(unfolded_input, unfolded_weight, method=method)
-
-def alignment_conv_look(processed_activity, layer, stride, grid, method='alignment'):
-    # Take (NI, C, H, W) (preprocessed) input activity
-    # And compute the similarity for one "look" e.g. one position of the convolutional filter
-    num_images = processed_activity.shape[0]
-    num_elements = processed_activity.shape[1] * layer.kernel_size[0] * layer.kernel_size[1]
-    h_idx = grid[0] + stride[0]*layer.stride[0]
-    w_idx = grid[1] + stride[1]*layer.stride[1]
-    aligned_input = processed_activity[:, :, h_idx, w_idx].reshape(num_images, num_elements)
-    aligned_weights = layer.weight.data.reshape(layer.out_channels, num_elements).detach()
-    stride_variance = torch.mean(torch.var(aligned_input, dim=1))
-    return alignment(aligned_input, aligned_weights, method=method), stride_variance
+    layer_prms = get_unfold_params(layer)
+    # unfold data so it's in shape (batch, kernel_dim, num_strides)
+    unfolded_input = torch.nn.functional.unfold(activity, layer.kernel_size, **layer_prms)
+    # get average variance of each stride
+    variance_stride = torch.mean(torch.var(unfolded_input, dim=1), dim=0)
+    # get weights of layer
+    weight = layer.weight.data
+    # get alignment for each channel on each stride
+    align_stride = torch.stack([alignment(unfolded_input[:, :, i], weight.view(weight.size(0), -1), method=method) for i in range(unfolded_input.size(2))], dim=1)
+    # return weighted average, weighting by variance on each stride (ignoring nans in case any strides have no variance)
+    return weighted_average(align_stride, variance_stride.view(1, -1), 1, ignore_nan=True)
 
 def get_maximum_strides(h_input, w_input, layer):
     h_max = int(np.floor((h_input + 2*layer.padding[0] - layer.dilation[0]*(layer.kernel_size[0] - 1) -1)/layer.stride[0] + 1))
     w_max = int(np.floor((w_input + 2*layer.padding[1] - layer.dilation[1]*(layer.kernel_size[1] - 1) -1)/layer.stride[1] + 1))
     return h_max, w_max
 
-def correlation(output, method='corr'):
-    """
-    Expects a batch x neuron tensor of output activity of a layer
-
-    Returns: 
-    Pairwise variance or correlation coefficient between neurons across batch dimension
-    """
-    if method=='var':
-        return torch.cov(output.T)
-    elif method=='corr':
-        return smartcorr(output.T)
-    else:
-        raise ValueError(f"Method ({method}) not recognized, must be 'var' or 'corr'")
-
-def correlation_linear(output, method='corr'):
-    """wrapper for correlation of linear layer"""
-    return correlation(output, method=method)
-
-def correlation_convolutional(output, method='corr', each_stride=False):
-    """
-    wrapper for correlation of convolutional layer (conv2d)
-    
-    there are two natural methods - one is to measure the correlation using each 
-    convolutional stride, the second is to measure the correlation of the full 
-    unfolded layer. each_stride determines which one to use. 
-    
-    when each_stride=True, a weighted average of the correlation at each stride is
-    taken where the weights are the variance in the output (across channels and batch)
-    at that stride. This way, the output is a (num_output_channels, num_output_channels)
-    shaped tensor regardless of the setting used for each_stride.
-
-    NOTE: 
-    This choice for each_stride=True was made because it works and is a simple way
-    of averaging across strides. There might be a smarter way to average where the per
-    channel variance is used rather than the across channel variance. We should think
-    about that and make a better decision, or potentially created an option for doing
-    it either way depending on the scientific goal.
-    """
-    if each_stride:
-        num_channels, h_max, w_max = output.size(1), output.size(2), output.size(3)
-        corr = torch.zeros((num_channels, num_channels), dtype=output.dtype).to(get_device(output))
-        vars = []
-        for h in range(h_max):
-            for w in range(w_max):
-                cvar = torch.var(output[:, :, h, w].flatten())
-                vars.append(cvar)
-                corr += correlation(output[:, :, h, w], method=method) * cvar
-        corr /= torch.sum(torch.tensor(vars))
-        return corr
-    else:
-        output_by_channel = output.transpose(0, 1).reshape(output.shape[1], -1) # channels x (batch*H*W)
-        return correlation(output_by_channel.T, method=method)
+def get_unfold_params(layer):
+    return dict(stride=layer.stride, padding=layer.padding, dilation=layer.dilation)
 
 def avg_value_by_layer(full):
     """
@@ -324,72 +486,83 @@ def compute_stats_by_type(tensor, num_types, dim, method='var'):
 
     return type_means, type_dev
 
-def weighted_average(data, weights, dim, keepdim=False):
+def weighted_average(data, weights, dim, keepdim=False, ignore_nan=False):
     """
     take the weighted average of **data** on a certain dimension with **weights**
 
-    weights should be a nonnegative vector with the same size as data.size(dim)
-    uses the standard formula:
-    avg = data_i * weight_i
+    weights should be a nonnegative vector that broadcasts into data
+    avg = sum_i(data_i * weight_i, dim) / sum_i(weight_i, dim)
+
+    if ignore_nan=True, (default=False), will ignore nans in weighted average
     """
-    assert weights.ndim==1, "weights must be a 1-d tensor"
-    data_ndim = data.ndim
-    weight_dim = weights.size(0)
-    new_view = [weight_dim if ii==dim else 1 for ii in range(data_ndim)]
-    weights = weights.view(new_view)
-    numerator = torch.sum(data * weights, dim=dim, keepdim=keepdim)
-    denominator = torch.sum(weights, dim=dim, keepdim=keepdim)
+    assert data.ndim == weights.ndim, "data and weights must have same number of dimensions"
+    assert torch.all(weights[~torch.isnan(weights)]>=0), "weights must be nonnegative"
+    
+    for d in (dim if check_iterable(dim) else [dim]):
+        assert data.size(d) == weights.size(d), f"data and weights must have same size in averaging dimensions (data.size({d})={data.size(d)}, (weight.size({d})={weights.size(d)}))"
+    
+    # use normal sum if not ignore nan, otherwise use nansum
+    sum = torch.nansum if ignore_nan else torch.sum
+    
+    # make sure nans are in the same place in weights and data for accurate division by total weight
+    if ignore_nan:
+        weights = weights.expand(data.size())
+        weights = torch.masked_fill(weights, torch.isnan(data), torch.nan)
+
+    # numerator & denominator of weighted average
+    numerator = sum(data * weights, dim=dim, keepdim=keepdim)
+    denominator = sum(weights, dim=dim, keepdim=keepdim)
+
+    # return weighted average
     return numerator / denominator
 
-def plot_rf(rf, width, alignment=None, alignBounds=None, showRFs=None, figSize=5):
-    if showRFs is not None: 
-        rf = rf.reshape(rf.shape[0], -1)
-        idxRandom = np.random.choice(range(rf.shape[0]),showRFs,replace=False)
-        rf = rf[idxRandom,:]
-    else: 
-        showRFs = rf.shape[0]
-    # normalize
-    rf = rf.T / np.abs(rf).max(axis=1)
-    rf = rf.T
-    rf = rf.reshape(showRFs, width, width)
-    # If necessary, create colormap
-    if alignment is not None:
-        cmap = cm.get_cmap('rainbow', rf.shape[0])
-        cmapPeak = lambda x : cmap(x)
-        if alignBounds is not None:
-            alignment = alignment - alignBounds[0]
-            alignment = alignment / (alignBounds[1] - alignBounds[0])
-        else:
-            alignment = (alignment - alignment.min())
-            alignment = alignment / alignment.max()
-        
-    # plotting
-    n = int(np.ceil(np.sqrt(rf.shape[0])))
-    fig, axes = plt.subplots(nrows=n, ncols=n, sharex=True, sharey=True)
-    fig.set_size_inches(figSize,figSize)
-    
-    N = 1000
-    for i in tqdm(range(rf.shape[0])):
-        ax = axes[i // n][i % n]
-        if alignment is not None:
-            vals = np.ones((N, 4))
-            cAlignment = alignment[i].numpy()
-            cPeak = cmapPeak(alignment[i].numpy())
-            vals[:, 0] = np.linspace(0, cPeak[0], N)
-            vals[:, 1] = np.linspace(0, cPeak[1], N)
-            vals[:, 2] = np.linspace(0, cPeak[2], N)
-            usecmap = ListedColormap(vals)
-            ax.imshow(rf[i], cmap=usecmap, vmin=-1, vmax=1)
-        else:
-            ax.imshow(rf[i], cmap='gray', vmin=-1, vmax=1)
-        ax.set_xticks([])
-        ax.set_yticks([])
-        ax.set_aspect('equal')
-    for j in range(rf.shape[0], n * n):
-        ax = axes[j // n][j % n]
-        ax.imshow(np.ones_like(rf[0]) * -1, cmap='gray', vmin=-1, vmax=1)
-        ax.set_xticks([])
-        ax.set_yticks([])
-        ax.set_aspect('equal')
-    fig.subplots_adjust(wspace=0.0, hspace=0.0)
-    return fig
+
+def str2bool(str):
+    if isinstance(str, bool):
+        return str
+    if str.lower() in ('true', '1'):
+        return True
+    elif str.lower() in ('false', '0'):
+        return False
+    else:
+        raise TypeError("Boolean type expected")
+
+
+def save_checkpoint(nets, optimizers, results, path):
+    """
+    Method for saving checkpoints for networks throughout training.
+    """
+    multi_model_ckpt = {f'model_state_dict_{i}': net.state_dict()
+                        for i, net in enumerate(nets)}
+    multi_optimizer_ckpt = {f'optimizer_state_dict_{i}': opt.state_dict()
+                            for i, opt in enumerate(optimizers)}
+    checkpoint = results | multi_model_ckpt | multi_optimizer_ckpt
+    torch.save(checkpoint, path)
+
+
+def load_checkpoints(nets, optimizers, device, path):
+    """
+    Method for loading presaved checkpoint during training.
+    TODO: device handling for passing between gpu/cpu
+    """
+
+    if device == 'cpu':
+        checkpoint = torch.load(path, map_location=device)
+    elif device == 'cuda':
+        checkpoint = torch.load(path)
+
+    net_ids = sorted([key for key in checkpoint if key.startswith('model_state_dict')])
+    opt_ids = sorted([key for key in checkpoint if key.startswith('optimizer_state_dict')])
+    assert all([oi.split('_')[-1] == ni.split('_')[-1] for oi, ni in zip(opt_ids, net_ids)]), (
+        'nets and optimizers cannot be matched up from checkpoint'
+    )
+
+    [net.load_state_dict(checkpoint.pop(net_id))
+        for net, net_id in zip(nets, net_ids)]
+    [opt.load_state_dict(checkpoint.pop(opt_id))
+        for opt, opt_id in zip(optimizers, opt_ids)]
+
+    if device == 'cuda':
+        [net.to(device) for net in nets]
+
+    return nets, optimizers, checkpoint
