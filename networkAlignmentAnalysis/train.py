@@ -251,8 +251,8 @@ def progressive_dropout(nets, dataset, alignment=None, **parameters):
     num_batches = 0
 
     # retrieve requested dataloader from dataset
-    use_test = not parameters.get('train_set', True)
-    dataloader = dataset.test_loader if use_test else dataset.train_loader
+    use_train = parameters.get('train_set', False)
+    dataloader = dataset.train_loader if use_train else dataset.test_loader
 
     # let dataloader be outer loop to minimize extract / load / transform time
     for batch in tqdm(dataloader):
