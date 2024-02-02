@@ -662,7 +662,8 @@ class Experiment(ABC):
         self.plot_ready('eigenfeatures_loglog')
 
 
-        fig, ax = plt.subplots(num_types, num_layers, figsize=(num_layers*figdim, figdim*2), layout='constrained')
+        fig, ax = plt.subplots(num_types, num_layers, figsize=(num_layers*figdim, figdim*num_types), layout='constrained')
+        ax = np.reshape(ax, (num_types, num_layers))
         for layer in range(num_layers):
             num_input = mean_evals[layer].size(1)
             for idx, label in enumerate(labels):                
