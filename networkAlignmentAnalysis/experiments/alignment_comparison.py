@@ -1,8 +1,9 @@
 import torch
-from .alignment_stats import AlignmentStatistics
+from .experiment import Experiment 
 from ..models.registry import get_model, get_model_parameters
+from . import arglib
 
-class AlignmentComparison(AlignmentStatistics):
+class AlignmentComparison(Experiment):
     def get_basename(self):
         """
         define basename for the AlignmentComparison experiment
@@ -18,17 +19,14 @@ class AlignmentComparison(AlignmentStatistics):
     def make_args(self, parser):
         """
         Method for adding experiment specific arguments to the argument parser
-
-        (Overwriting the make_args from AlignmentStatistics)
         """
+        parser = arglib.add_standard_training_parameters(parser)
+        parser = arglib.add_network_metaparameters(parser)
+        parser = arglib.add_checkpointing(parser)
+        parser = arglib.add_dropout_experiment_details(parser)
+        parser = arglib.add_alignment_analysis_parameters(parser)
 
-        # Network & Dataset
-        parser.add_argument('--network', type=str, default='MLP') # what base network architecture to use
-        parser.add_argument('--dataset', type=str, default='MNIST') # what dataset to use
-        parser.add_argument('--optimizer', type=str, default='Adam') # what optimizer to train with
-        parser.add_argument('--batch-size', type=int, default=1024) # batch size to pass to DataLoader
-
-        # main experiment parameters
+        # add special experiment parameters
         # -- the "comparison" determines what should be compared by the script --
         # -- depending on selection, something about the networks are varied throughout the experiment --
         parser.add_argument('--comparison', type=str, default='lr') # what comparison to do (see load_networks for options)
@@ -38,25 +36,6 @@ class AlignmentComparison(AlignmentStatistics):
         # supporting parameters for some of the "comparisons"
         parser.add_argument('--compare-dropout', type=float, default=0.5) # dropout when doing regularizer comparison
         parser.add_argument('--compare-wd', type=float, default=1e-5) # weight-decay when doing regularizer comparison
-
-        # default parameters
-        parser.add_argument('--default-lr', type=float, default=1e-3) # default learning rate
-        parser.add_argument('--default-dropout', type=float, default=0) # default dropout rate
-        parser.add_argument('--default-wd', type=float, default=0) # default weight decay
-
-        # progressive dropout parameters
-        parser.add_argument('--num-drops', type=int, default=9, help='number of dropout fractions for progressive dropout')
-        parser.add_argument('--dropout-by-layer', default=False, action='store_true', 
-                            help='whether to do progressive dropout by layer or across all layers')
-        
-        # some metaparameters for the experiment
-        parser.add_argument('--epochs', type=int, default=100, help='how many epochs to train the networks on')
-        parser.add_argument('--replicates', type=int, default=5, help='how many replicates of networks to train') 
-        parser.add_argument('--ignore-flag', default=False, action='store_true', help='if used, will omit flagged layers in analyses')
-        
-        # checkpointing parameters
-        parser.add_argument('--use_prev', default=False, action='store_true', help='if used, will pick up training off previous checkpoint')
-        parser.add_argument('--save_ckpts', default=False, action='store_true', help='if used, will save checkpoints of models')
 
         # return parser
         return parser
@@ -121,3 +100,52 @@ class AlignmentComparison(AlignmentStatistics):
             raise ValueError(f"Comparison={self.args.comparision} is not recognized")
 
 
+    def main(self):
+        """
+        main experiment loop
+        
+        create networks (this is where the specific experiment is determined)
+        train and test networks
+        do supplementary analyses
+        """
+        # load networks 
+        nets, optimizers, prms = self.load_networks()
+
+        # load dataset
+        dataset = self.prepare_dataset(nets[0])
+
+        # train networks
+        train_results, test_results = self.train_networks(nets, optimizers, dataset)
+
+        # do targeted dropout experiment
+        dropout_results, dropout_parameters = self.progressive_dropout_experiment(nets, dataset, alignment=test_results['alignment'], train_set=False)
+        
+        # measure eigenfeatures
+        eigen_results = self.measure_eigenfeatures(nets, dataset, train_set=False)
+
+        # do targeted dropout experiment
+        evec_dropout_results, evec_dropout_parameters = self.eigenvector_dropout(nets, dataset, eigen_results, train_set=False)
+        
+        # make full results dictionary
+        results = dict(
+            prms=prms,
+            train_results=train_results,
+            test_results=test_results,
+            dropout_results=dropout_results,
+            dropout_parameters=dropout_parameters,
+            eigen_results=eigen_results,
+            evec_dropout_results=evec_dropout_results,
+            evec_dropout_parameters=evec_dropout_parameters,
+        )    
+
+        # return results and trained networks
+        return results, nets
+    
+    def plot(self, results):
+        """
+        main plotting loop
+        """
+        self.plot_train_results(results['train_results'], results['test_results'], results['prms'])
+        self.plot_dropout_results(results['dropout_results'], results['dropout_parameters'], results['prms'], dropout_type='nodes')
+        self.plot_eigenfeatures(results['eigen_results'], results['prms'])
+        self.plot_dropout_results(results['evec_dropout_results'], results['evec_dropout_parameters'], results['prms'], dropout_type='eigenvectors')
