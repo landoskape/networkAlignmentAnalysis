@@ -274,6 +274,7 @@ class Experiment(ABC):
             num_epochs=self.args.epochs,
             alignment=not(self.args.no_alignment),
             delta_weights=self.args.delta_weights,
+            frequency=self.args.frequency,
         )
 
         if self.args.use_prev & os.path.isfile(self.get_checkpoint_path()):
@@ -442,14 +443,15 @@ class Experiment(ABC):
         self.plot_ready('train_test_performance')
 
         # Make Alignment Figure
+        num_align_epochs = align_mean.size(2)
         num_layers = align_mean.size(0)
         fig, ax = plt.subplots(1, num_layers, figsize=(num_layers*figdim, figdim), layout='constrained', sharex=True)
         for idx, label in enumerate(labels):
             for layer in range(num_layers):
                 cmn = align_mean[layer, idx] * 100
                 cse = align_se[layer, idx] * 100
-                ax[layer].plot(range(num_train_epochs), cmn, color=cmap(idx), label=label)
-                ax[layer].fill_between(range(num_train_epochs), cmn+cse, cmn-cse, color=(cmap(idx), alpha))
+                ax[layer].plot(range(num_align_epochs), cmn, color=cmap(idx), label=label)
+                ax[layer].fill_between(range(num_align_epochs), cmn+cse, cmn-cse, color=(cmap(idx), alpha))
 
         for layer in range(num_layers):
             ax[layer].set_ylim(0, None)
