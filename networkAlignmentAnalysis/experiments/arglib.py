@@ -23,6 +23,7 @@ def add_alignment_analysis_parameters(parser):
     parser.add_argument('--ignore-flag', default=False, action='store_true', help='if used, will omit flagged layers in analyses')
     parser.add_argument('--no-alignment', default=False, action='store_true', help='if used, will not measure alignment during training and testing')
     parser.add_argument('--delta-weights', default=False, action='store_true', help='if used, will measure delta-weights during training')
+    parser.add_argument('--frequency', default=1, type=int, help='how frequently to measure alignment etc. (how many minibatches)')
     return parser
 
 def add_checkpointing(parser):

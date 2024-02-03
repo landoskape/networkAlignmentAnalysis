@@ -14,8 +14,8 @@ DATASET_ARGUMENTS = {
     },
     'CNN2P2': {
         'MNIST': dict(in_channels=1, output_dim=10),
-        'CIFAR10': dict(in_channels=3, output_dim=10),
-        'CIFAR100': dict(in_channels=3, output_dim=100),
+        'CIFAR10': dict(in_channels=3, num_hidden=[4096, 128], output_dim=10),
+        'CIFAR100': dict(in_channels=3, num_hidden=[4096, 128], output_dim=100),
         'ImageNet': dict(in_channels=3, output_dim=1000),
     },
     'AlexNet': {

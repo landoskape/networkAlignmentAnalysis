@@ -28,6 +28,7 @@ def train(nets, optimizers, dataset, **parameters):
     # --- optional analyses ---
     measure_alignment = parameters.get('alignment', True)
     measure_delta_weights = parameters.get('delta_weights', False)
+    measure_frequency = parameters.get('frequency', 1)
 
     # --- create results dictionary if not provided and handle checkpoint info ---
     results = parameters.get('results', False)
@@ -81,15 +82,16 @@ def train(nets, optimizers, dataset, **parameters):
             results['loss'][cidx] = torch.tensor([l.item() for l in loss])
             results['accuracy'][cidx] = torch.tensor([dataset.measure_accuracy(output, labels) for output in outputs])
 
-            if measure_alignment:
-                # Measure alignment if requested
-                results['alignment'].append([net.measure_alignment(images, precomputed=True, method='alignment')
-                                             for net in nets])
-            
-            if measure_delta_weights:
-                # Measure change in weights if requested
-                results['delta_weights'].append([net.compare_weights(init_weight)
-                                                 for net, init_weight in zip(nets, results['init_weights'])])
+            if idx % measure_frequency == 0:
+                if measure_alignment:
+                    # Measure alignment if requested
+                    results['alignment'].append([net.measure_alignment(images, precomputed=True, method='alignment')
+                                                for net in nets])
+                
+                if measure_delta_weights:
+                    # Measure change in weights if requested
+                    results['delta_weights'].append([net.compare_weights(init_weight)
+                                                    for net, init_weight in zip(nets, results['init_weights'])])
             
         if save_ckpt & (epoch % freq_ckpt == 0):
             save_checkpoint(nets,
