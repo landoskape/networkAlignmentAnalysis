@@ -329,7 +329,7 @@ class Experiment(ABC):
 
         # make it a dictionary
         return dict(beta=beta, eigvals=eigvals, eigvecs=eigvecs, class_betas=class_betas, class_names=dataloader.dataset.classes) 
-        
+    
     def eigenvector_dropout(self, nets, dataset, eigen_results, train_set=False):
         """
         do targeted eigenvector dropout with precomputed eigenfeatures
