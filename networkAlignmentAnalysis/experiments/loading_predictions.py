@@ -4,18 +4,19 @@ from .experiment import Experiment
 from ..models.registry import get_model, get_model_parameters
 from . import arglib
 from ..import utils
+from .. import processing
 
 from matplotlib import pyplot as plt
 
 from sklearn.discriminant_analysis import LinearDiscriminantAnalysis
 from sklearn.metrics import confusion_matrix
 
-class AlignmentComparison(Experiment):
+class LoadingPredictions(Experiment):
     def get_basename(self):
         """
-        define basename for the AlignmentComparison experiment
+        define basename for the LoadingPredictions experiment
         """
-        return 'alignment_comparison'
+        return 'LoadingPredictions'
     
     def prepare_path(self):
         """
@@ -122,10 +123,10 @@ class AlignmentComparison(Experiment):
         dataset = self.prepare_dataset(nets[0])
 
         # train networks
-        train_results, test_results = self.train_networks(nets, optimizers, dataset)
+        train_results, test_results = processing.train_networks(self, nets, optimizers, dataset)
 
         # do targeted dropout experiment
-        dropout_results, dropout_parameters = self.progressive_dropout_experiment(nets, dataset, alignment=test_results['alignment'], train_set=False)
+        dropout_results, dropout_parameters = processing.progressive_dropout_experiment(self, nets, dataset, alignment=test_results['alignment'], train_set=False)
         
         # measure eigenfeatures
         _, _, eigenvector = utils.named_transpose([net.measure_eigenfeatures(dataset.test_loader) for net in nets])
