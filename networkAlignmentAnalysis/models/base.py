@@ -697,9 +697,72 @@ class AlignmentNetwork(nn.Module, ABC):
 
         # return outputs
         return inputs, labels
-        
 
-    
+    @torch.no_grad()
+    def shape_eigenfeatures(self, idx_layers, eigenvalues, eigenvectors, eval_transform):
+        """
+        method for shaping the eigenfeatures of a network
+
+        use eval_transform to shape a network by changing the scale of each 
+        eigenvector's contribution to the weights based on the associated
+        eigenvalue for a specific set of layers.
+
+        idx_layers is a list indicating which layers to shape (where the indices
+        should correspond to indices in self.get_alignment_layer_indices())
+
+        eigenvalues and eigenvectors should be a list with length=len(idx_layers)
+        and each should correspond to the eigenvalues & eigenvectors of the input
+        to each layer in idx_layers
+
+        eval_transform is a callable function that takes a set of eigenvalues and
+        returns the desired scale of eigenvectors associated with each eigenvalue
+        for example, if eigenvalues[0]=[1, 0.5, 0.25, 0.125]*37.9991, eval_transform
+        might return [1, 1, 1, 0] which simply "kills" the last eigenvector
+        alternatively, it could return [1, 0.25, 0.25**2, 0.125**2]*37.9991**2/sum 
+        where it shapes each eigenvector by the square of the eigenvalues
+        """
+        # do some input checks
+        assert all([idx in self.get_alignment_layer_indices() for idx in idx_layers]), (
+            "idx_layers includes some indices not in alignment layers",
+            f"(provided: {idx_layers}, alignment_layer_indices: {self.get_alignment_layer_indices()})"
+        )
+        assert len(idx_layers)==len(eigenvalues), "length of idx_layers and eigenvalues doesn't match"
+        assert len(idx_layers)==len(eigenvectors), "length of idx_layers and eigenvectors doesn't match"
+
+        # make sure eigenvalues and eigenvalues are on same device as network
+        device = get_device(self)
+        eigenvalues = [evals.to(device) for evals in eigenvalues]
+        eigenvectors = [evecs.to(device) for evecs in eigenvectors]
+
+        # get weights and original shapes of requested alignment layers
+        weight_shape = [self.get_alignment_weights(idx=idx).shape for idx in idx_layers]
+        weights = [self.get_alignment_weights(idx=idx, flatten=True) for idx in idx_layers]
+        
+        # measure original norm of weights
+        norm_of_weights = [torch.norm(weight, dim=1, keepdim=True) for weight in weights]
+
+        # normalize weight vector
+        weights = [weight / torch.norm(weight, dim=1, keepdim=True) for weight in weights]
+        
+        # for each layer, process the eigenvalues, shape the weights, and update the network
+        zipped = zip(idx_layers, eigenvalues, eigenvectors, weights, norm_of_weights, weight_shape)
+        for idx, evals, evecs, weight, norm_weight, shape in zipped:
+            # transform eigenvalues
+            eval_keep_fraction = eval_transform(evals)
+            assert type(eval_keep_fraction)==type(evals) and eval_keep_fraction.shape==evals.shape, "eval_transform returned new evals with the wrong type or shape"
+            # define a projection matrix that scales the contribution of each eigenvalue by eval_keep_fraction
+            proj_matrix = evecs @ torch.diag(eval_keep_fraction) @ evecs.T
+            # shape the weights
+            shaped_weights = weight @ proj_matrix
+            # renormalize them to their original norm
+            shaped_weights = shaped_weights / torch.norm(shaped_weights, dim=1, keepdim=True) # normalize
+            shaped_weights = shaped_weights * norm_weight
+            # reshape to original shape
+            shaped_weights = torch.reshape(shaped_weights, shape)
+            # update the network
+            self.get_alignment_layers(idx=idx).weight.data = shaped_weights
+            
+
 
 # def ExperimentalNetwork(AlignmentNetwork):
 #     """maintain some experimental methods here"""
@@ -732,31 +795,4 @@ class AlignmentNetwork(nn.Module, ABC):
 #         self.fc4.weight.data = self.fc4.weight.data / torch.norm(self.fc4.weight.data,dim=1,keepdim=True)
 #         #print(f"fc4: Weight.shape:{self.fc4.weight.data.shape}, update.shape:{dfc4.shape}")
 
-#     def manualShape(self,evals,evecs,DEVICE,evalTransform=None):
-#         if evalTransform is None:
-#             evalTransform = lambda x:x
-            
-#         sbetas = [] # produce signed betas
-#         netweights = self.getNetworkWeights()
-#         for evc,nw in zip(evecs,netweights):
-#             nw = nw / torch.norm(nw,dim=1,keepdim=True)
-#             sbetas.append(nw.cpu() @ evc)
-        
-#         shapedWeights = [[] for _ in range(self.numLayers)]
-#         for layer in range(self.numLayers):
-#             assert np.all(evals[layer]>=0), "Found negative eigenvalues..."
-#             cFractionVariance = evals[layer]/np.sum(evals[layer]) # compute fraction of variance explained by each eigenvector
-#             cKeepFraction = evalTransform(cFractionVariance).astype(cFractionVariance.dtype) # make sure the datatype doesn't change, otherwise pytorch einsum will be unhappy
-#             assert np.all(cKeepFraction>=0), "Found negative transformed keep fractions. This means the transform function has an improper form." 
-#             assert np.all(cKeepFraction<=1), "Found keep fractions greater than 1. This is bad practice, design the evalTransform function to have a domain and range within [0,1]"
-#             weightNorms = torch.norm(netweights[layer],dim=1,keepdim=True) # measure norm of weights (this will be invariant to the change)
-#             evecComposition = torch.einsum('oi,xi->oxi',sbetas[layer],torch.tensor(evecs[layer])) # create tensor composed of each eigenvector scaled to it's contribution in each weight vector
-#             newComposition = torch.einsum('oxi,i->ox',evecComposition,torch.tensor(cKeepFraction)).to(DEVICE) # scale eigenvectors based on their keep fraction (by default scale them by their variance)
-#             shapedWeights[layer] = newComposition / torch.norm(newComposition,dim=1,keepdim=True) * weightNorms
-        
-#         # Assign new weights to network
-#         self.fc1.weight.data = shapedWeights[0]
-#         self.fc2.weight.data = shapedWeights[1]
-#         self.fc3.weight.data = shapedWeights[2]
-#         self.fc4.weight.data = shapedWeights[3]
-
+#     
