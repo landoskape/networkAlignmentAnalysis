@@ -3,7 +3,7 @@ from tqdm import tqdm
 from . import train
 from .utils import load_checkpoints
 
-def train_networks(exp, nets, optimizers, dataset):
+def train_networks(exp, nets, optimizers, dataset, **special_parameters):
     """train and test networks"""
     # do training loop
     parameters = dict(
@@ -13,6 +13,9 @@ def train_networks(exp, nets, optimizers, dataset):
         delta_weights=exp.args.delta_weights,
         frequency=exp.args.frequency,
     )
+
+    # update with special parameters
+    parameters.update(**special_parameters)
 
     if exp.args.use_prev & os.path.isfile(exp.get_checkpoint_path()):
         nets, optimizers, results = load_checkpoints(nets,
@@ -55,10 +58,14 @@ def measure_eigenfeatures(exp, nets, dataset, train_set=False):
     # measure eigenfeatures
     print('measuring eigenfeatures...')
     beta, eigvals, eigvecs, class_betas = [], [], [], []
-    dataloader = dataset.train_loader if train_set else dataset.test_loader
     for net in tqdm(nets):
-        eigenfeatures = net.measure_eigenfeatures(dataloader, with_updates=False)
-        beta_by_class = net.measure_class_eigenfeatures(dataloader, eigenfeatures[2], rms=False, with_updates=False)
+        # get inputs to each layer from whole dataloader
+        inputs, labels = net._process_collect_activity(dataset,
+                                                       train_set=train_set,
+                                                       with_updates=False,
+                                                       use_training_mode=False)
+        eigenfeatures = net.measure_eigenfeatures(inputs, with_updates=False)
+        beta_by_class = net.measure_class_eigenfeatures(inputs, labels, eigenfeatures[2], rms=False, with_updates=False)
         beta.append(eigenfeatures[0])
         eigvals.append(eigenfeatures[1])
         eigvecs.append(eigenfeatures[2])
