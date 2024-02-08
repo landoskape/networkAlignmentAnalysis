@@ -219,7 +219,8 @@ class AlexNet(AlignmentNetwork):
             'MNIST': {
                 'flatten': False,
                 'resize': (224, 224),
-                'out_channel': 3,
+                # 'out_channel': 3, # will replace extra-transform with this when torchvision is ready
+                'extra_transform': gray_to_rgb,
             },
             'CIFAR10': {
                 'flatten': False,
@@ -234,6 +235,7 @@ class AlexNet(AlignmentNetwork):
                 'resize': (256, 256),
             }
         }
+
         if dataset not in params: 
             raise ValueError(f"Dataset ({dataset}) is not in params dictionary: {[k for k in params]}")
         return params[dataset]
