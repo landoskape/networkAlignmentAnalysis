@@ -218,8 +218,8 @@ class AlexNet(AlignmentNetwork):
         params = {
             'MNIST': {
                 'flatten': False,
-                'resize': (224, 224), 
-                'extra_transform': gray_to_rgb,
+                'resize': (224, 224),
+                'out_channel': 3,
             },
             'CIFAR10': {
                 'flatten': False,
