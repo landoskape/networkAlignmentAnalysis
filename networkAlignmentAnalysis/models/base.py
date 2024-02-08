@@ -516,7 +516,7 @@ class AlignmentNetwork(nn.Module, ABC):
         
                 
     @torch.no_grad()
-    def measure_eigenfeatures(self, dataloader, with_updates=True, centered=True):
+    def measure_eigenfeatures(self, inputs, with_updates=True, centered=True):
         """
         measure the eigenvalues and eigenvectors of the input to each layer
         and also measure how much each weight array uses each eigenvector
@@ -534,9 +534,6 @@ class AlignmentNetwork(nn.Module, ABC):
         for convolutional layers, will unfold and measure eigenfeatures for each 
         stride (and take the average across strides weighted by input variance)
         """
-        # get inputs to layers for entire dataset in dataloader
-        inputs, _ = self._process_collect_activity(dataloader, with_updates=with_updates, use_training_mode=False)
-        
         # retrieve weights, reshape, and flatten inputs as required
         weights = self.get_alignment_weights(flatten=True)
         inputs = self._preprocess_inputs(inputs)
@@ -545,7 +542,7 @@ class AlignmentNetwork(nn.Module, ABC):
         return self._measure_layer_eigenfeatures(inputs, weights, centered=centered, with_updates=with_updates)
     
 
-    def measure_class_eigenfeatures(self, dataloader, eigenvectors, rms=False, with_updates=True):
+    def measure_class_eigenfeatures(self, inputs, labels, eigenvectors, rms=False, with_updates=True):
         """
         propagate an entire dataset through the network and measure the contribution
         of each eigenvector to each element of the class
@@ -560,12 +557,10 @@ class AlignmentNetwork(nn.Module, ABC):
 
         if rms=True, will convert beta_by_class to an average with the RMS method
         """
-        # get inputs and labels to layers for entire dataset in dataloader
-        inputs, labels = self._process_collect_activity(dataloader, with_updates=with_updates, use_training_mode=False)
-
         # get stacked indices to the elements of each class
-        num_classes = len(dataloader.dataset.classes)
-        idx_to_class = [torch.where(labels==ii)[0] for ii in range(num_classes)]
+        classes = torch.unique(labels)
+        num_classes = len(classes)
+        idx_to_class = [torch.where(labels==ii)[0] for ii in classes]
         num_per_class = [len(idx) for idx in idx_to_class]
         min_per_class = min(num_per_class)
         if any([npc>min_per_class for npc in num_per_class]):
@@ -658,7 +653,7 @@ class AlignmentNetwork(nn.Module, ABC):
         return beta, eigenvalues, eigenvectors
     
     
-    def _process_collect_activity(self, dataloader, with_updates=True, use_training_mode=False):
+    def _process_collect_activity(self, dataset, train_set=True, with_updates=True, use_training_mode=False):
         """
         helper for processing and collecting activity of network in response to all inputs of dataloader
 
@@ -680,9 +675,10 @@ class AlignmentNetwork(nn.Module, ABC):
         # store input and measure activations for every element in dataloader
         allinputs = []
         alllabels = []
+        dataloader = dataset.train_loader if train_set else dataset.test_loader
         dataloop = tqdm(dataloader) if with_updates else dataloader
-        for input, labels in dataloop:
-            input = input.to(device)
+        for batch in dataloop:
+            input, labels = dataset.unwrap_batch(batch, device=device)
             layer_inputs = [input.cpu() for input in self.get_layer_inputs(input, precomputed=False)]
             allinputs.append(layer_inputs)
             alllabels.append(labels.cpu())
