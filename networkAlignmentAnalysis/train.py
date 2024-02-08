@@ -29,6 +29,14 @@ def train(nets, optimizers, dataset, **parameters):
     measure_alignment = parameters.get('alignment', True)
     measure_delta_weights = parameters.get('delta_weights', False)
     measure_frequency = parameters.get('frequency', 1)
+    
+    # --- optional training method: manual shaping with eigenvectors ---
+    manual_shape = parameters.get('manual_shape', False) # true or False, whether to do this
+    # frequency of manual shape (similar to measure_frequency)
+    # if positive, by minibatch, if negative, by epoch
+    manual_frequency = parameters.get('manual_frequency', -1) 
+    manual_transforms = parameters.get('manual_transforms', None) # len()==len(nets) callable methods
+    manual_layers = parameters.get('manual_layers', None) # index to which layers
 
     # --- create results dictionary if not provided and handle checkpoint info ---
     results = parameters.get('results', False)
@@ -93,6 +101,30 @@ def train(nets, optimizers, dataset, **parameters):
                     results['delta_weights'].append([net.compare_weights(init_weight)
                                                     for net, init_weight in zip(nets, results['init_weights'])])
             
+            if manual_shape:
+                if manual_frequency>0 and (idx % manual_frequency):
+                    for net, transform in zip(nets, manual_transforms):
+                        # just use this minibatch for computing eigenfeatures
+                        _, eigenvalues, eigenvectors = net.measure_eigenfeatures(images, with_updates=False)
+                        idx_to_layer_lookup = {layer: idx for idx, layer in enumerate(net.get_alignment_layer_indices())}
+                        eigenvalues = [eigenvalues[idx_to_layer_lookup[ml]] for ml in manual_layers]
+                        eigenvectors = [eigenvectors[idx_to_layer_lookup[ml]] for ml in manual_layers]
+                        net.shape_eigenfeatures(manual_layers, eigenvalues, eigenvectors, transform)
+        
+        if manual_shape:
+            if manual_frequency<0 and (epoch % torch.abs(manual_frequency)):
+                for net, transform in zip(nets, manual_transforms):
+                    # just use this minibatch for computing eigenfeatures
+                    images, _ = net._process_collect_activity(dataset,
+                                                              train_set=use_train,
+                                                              with_updates=False,
+                                                              use_training_mode=False)
+                    _, eigenvalues, eigenvectors = net.measure_eigenfeatures(images, with_updates=False)
+                    idx_to_layer_lookup = {layer: idx for idx, layer in enumerate(net.get_alignment_layer_indices())}
+                    eigenvalues = [eigenvalues[idx_to_layer_lookup[ml]] for ml in manual_layers]
+                    eigenvectors = [eigenvectors[idx_to_layer_lookup[ml]] for ml in manual_layers]
+                    net.shape_eigenfeatures(manual_layers, eigenvalues, eigenvectors, transform)
+
         if save_ckpt & (epoch % freq_ckpt == 0):
             save_checkpoint(nets,
                             optimizers,
