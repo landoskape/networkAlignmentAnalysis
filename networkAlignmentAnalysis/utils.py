@@ -120,6 +120,21 @@ def remove_by_idx(input, idx, dim):
     idx_keep = [i for i in range(input.size(dim)) if i not in idx]
     return torch.index_select(input, dim, torch.tensor(idx_keep).to(input.device))
 
+def get_eval_transform_by_cutoff(cutoff):
+    """
+    get method for transforming eigenvalues into a binary keep fraction
+    
+    will scale each eigenvector by 1 or 0 depending on whether that eigenvalue
+    explains more than **cutoff** fraction of the variance
+
+    returns a callable method
+    """
+    def eval_transform(evals):
+        assert torch.all(evals >= 0), "found negative eigenvalues, doesn't work for 'cutoff' eval_transform"
+        evals = evals / torch.sum(evals)
+        return 1.0*(evals > cutoff)
+    return eval_transform
+
 def smartcorr(input):
     """
     Performs torch corrcoef on the input data but sets each pair-wise correlation coefficent
@@ -216,7 +231,6 @@ def smart_pca(input, centered=True, use_rank=True, correction=True):
 
     # return eigenvalues and eigenvectors
     return w, v
-
 
 def eigendecomposition(C, use_rank=True):
     """
@@ -341,11 +355,9 @@ def alignment(input, weight, method='alignment'):
     # proportion of variance explained by a projection of the input onto each weight
     return rq/torch.trace(cc)
 
-
 def alignment_linear(activity, layer, method='alignment'):
     """wrapper for alignment of linear layer, kwargs for compatibility"""
     return alignment(activity, layer.weight.data, method=method)
-
 
 def alignment_convolutional(activity, layer, method='alignment'):
     """
