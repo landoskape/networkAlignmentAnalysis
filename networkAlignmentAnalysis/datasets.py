@@ -79,18 +79,6 @@ class DataSet(ABC):
         loss_function: callable method, defines how to evaluate the loss of the output and target
         """
         pass
-
-    @abstractmethod
-    def make_transform(self, **transform_parameters):
-        """
-        defines the relevant transforms in the ETL pipeline for the dataset
-        
-        requires kwargs "transform_parameters" that are provided at initialization, 
-        stored by the object, and automatically passed into this method. It is
-        structured like this because I've unpacked the kwargs in the make_transform
-        methods to have clear requirements and provide defaults
-        """
-        pass
     
     @abstractmethod
     def dataset_kwargs(self, train=True):
@@ -121,6 +109,32 @@ class DataSet(ABC):
         inputs, targets = inputs.to(device), targets.to(device)
         return inputs, targets
     
+    def make_transform(self, resize=None, flatten=False, out_channels=None):
+        """
+        create transform for dataloader
+        resize is the new (H, W) shape of the image for the transforms.Resize transform (or None)
+        flatten is a boolean indicating whether to flatten the image, (i.e. for a linear input layer)
+        """
+        # default transforms
+        use_transforms = [
+            # Convert PIL Image to PyTorch Tensor
+            transforms.ToImage(),
+            transforms.ToDtype(torch.float32, scale=True),
+            # Normalize inputs to canonical distribution
+            transforms.Normalize((self.dist_params['mean'],), (self.dist_params['std'],)), 
+            ]
+        
+        # extra transforms depending on network
+        if resize:
+            use_transforms.append(transforms.Resize(resize))
+        if out_channels:
+            use_transforms.append(transforms.Grayscale(num_output_channels=out_channels))
+        if flatten:
+            use_transforms.append(transforms.Lambda(torch.flatten))
+        
+        # store composed transformation
+        self.transform = transforms.Compose(use_transforms)
+
     def measure_loss(self, outputs, targets):
         """simple method for measuring loss with stored loss function"""
         return self.loss_function(outputs, targets)
@@ -148,30 +162,6 @@ class MNIST(DataSet):
         self.loss_function = nn.CrossEntropyLoss()
         self.dist_params = dict(mean=0.1307, std=0.3081)
 
-    def make_transform(self, resize=None, flatten=False):
-        """
-        create transform for dataloader
-        resize is the new (H, W) shape of the image for the transforms.Resize transform (or None)
-        flatten is a boolean indicating whether to flatten the image, (i.e. for a linear input layer)
-        """
-        # default transforms
-        use_transforms = [
-            # Convert PIL Image to PyTorch Tensor
-            transforms.ToImage(),
-            transforms.ToDtype(torch.float32, scale=True),
-            # Normalize inputs to canonical distribution
-            transforms.Normalize((self.dist_params['mean'],), (self.dist_params['std'],)), 
-            ]
-        
-        # extra transforms depending on network
-        if resize:
-            use_transforms.append(transforms.Resize(resize))
-        if flatten:
-            use_transforms.append(transforms.Lambda(torch.flatten))
-
-        # store composed transformation
-        self.transform = transforms.Compose(use_transforms)
-
     def dataset_kwargs(self, train=True):
         """set data constructor kwargs for MNIST"""
         kwargs = dict(
@@ -181,7 +171,6 @@ class MNIST(DataSet):
             transform=self.transform,
         )
         return kwargs
-    
 
 class CIFAR10(DataSet):
     def set_properties(self):
@@ -190,30 +179,6 @@ class CIFAR10(DataSet):
         self.dataset_constructor = torchvision.datasets.CIFAR10
         self.loss_function = nn.CrossEntropyLoss()
         self.dist_params = dict(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5])
-
-    def make_transform(self, resize=None, flatten=False):
-        """
-        create transform for dataloader
-        resize is the new (H, W) shape of the image for the transforms.Resize transform (or None)
-        flatten is a boolean indicating whether to flatten the image, (i.e. for a linear input layer)
-        """
-        # default transforms
-        use_transforms = [
-            # Convert PIL Image to PyTorch Tensor
-            transforms.ToImage(),
-            transforms.ToDtype(torch.float32, scale=True),
-            # Normalize inputs to canonical distribution
-            transforms.Normalize((self.dist_params['mean']), (self.dist_params['std'])), 
-            ]
-        
-        # extra transforms depending on network
-        if resize:
-            use_transforms.append(transforms.Resize(resize))
-        if flatten:
-            use_transforms.append(transforms.Lambda(torch.flatten))
-
-        # store composed transformation
-        self.transform = transforms.Compose(use_transforms)
 
     def dataset_kwargs(self, train=True):
         """set data constructor kwargs for CIFAR10"""
@@ -249,32 +214,6 @@ class ImageNet2012(DataSet):
         self.dist_params = dict(mean=[0.485, 0.456, 0.406],
                                 std=[0.229, 0.224, 0.225])
         self.center_crop = 224
-
-    def make_transform(self, resize=256, flatten=False):
-        """
-        Create transform for dataloader.
-        resize is the new (H, W) shape of the image for the transforms. Resize
-        transform (or None).
-        flatten is a boolean indicating whether to flatten the image, (i.e.
-        for a linear input layer)
-        """
-        # default transforms
-        use_transforms = [
-            transforms.ToImage(),
-            transforms.ToDtype(torch.float32, scale=True),
-            transforms.CenterCrop(self.center_crop),
-            transforms.Normalize((self.dist_params['mean']),
-                                 (self.dist_params['std'])),
-        ]
-
-        # extra transforms depending on network
-        if resize:
-            use_transforms.append(transforms.Resize(resize))
-        if flatten:
-            use_transforms.append(transforms.Lambda(torch.flatten))
-
-        # store composed transformation
-        self.transform = transforms.Compose(use_transforms)
 
     def dataset_kwargs(self, train=True):
         """set data constructor kwargs for ImageNet2012"""
