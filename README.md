@@ -29,7 +29,7 @@ using the instructions on the pytorch
 There's no unit test, but to check if the install was successful, run the 
 following script while in the environment and in the top directory:
 ```
-python experiments.py alignment_stats --epochs 1 --replicates 1 --nosave
+python experiment.py alignment_stats --epochs 1 --replicates 1 --nosave
 ```
 
 ### Local File Management
