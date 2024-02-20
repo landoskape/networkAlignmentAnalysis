@@ -6,7 +6,8 @@ PATH_REGISTRY = {
     'DESKTOP-M2J64J2': Path('C:/Users/andrew/Documents/machineLearning'),
     'Celia': Path('/Users/celiaberon/Documents/machine_learning'),
     'cberon': Path('/n/home00/cberon/alignment/'),
-    'corwin': Path('/Users/corwin/Building')
+    'corwin': Path('/Users/corwin/Building'),
+    'atlandau': Path('/n/home05/atlandau/datasets')
 }
 
 def get_hostname():
@@ -18,7 +19,6 @@ def get_username():
 def local_path():
     """method for defining the local root path for datasets and results"""
     hostname = get_hostname()
-    print(hostname)
     if hostname.lower().startswith('celia'):
         hostname = 'Celia'
     hostname = hostname if hostname in PATH_REGISTRY else get_username()
