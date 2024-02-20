@@ -145,3 +145,11 @@ data is loaded by the dataloader. Again, see below for more explanation.
 ### DataSet Objects
 More to come ...
 
+
+### Flags
+Replicates, make multiple models so we can have error bars. List comprehension.
+
+Checkpoints?
+save_ckpts - save checkpoints
+
+
