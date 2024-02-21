@@ -32,7 +32,7 @@ class AdversarialShaping(Experiment):
         # add special experiment parameters
         # -- the "comparison" determines what should be compared by the script --
         # -- depending on selection, something about the networks are varied throughout the experiment --
-        parser.add_argument('--cutoff', type=float, nargs='*', default=[1e-2, 1e-3, 1e-4], help='what fraction of total variance to cut eigenvalues off at')
+        parser.add_argument('--cutoffs', type=float, nargs='*', default=[1e-2, 1e-3, 1e-4], help='what fraction of total variance to cut eigenvalues off at')
         
         # return parser
         return parser
@@ -62,7 +62,8 @@ class AdversarialShaping(Experiment):
             raise ValueError(f"optimizer ({self.args.optimizer}) not recognized")
 
         cutoffs = [co for co in self.args.cutoffs for _ in range(self.args.replicates)]
-        nets = [model_constructor(dropout=self.args.default_dropout, **model_parameters, ignore_flag=self.args.ignore_flag) for _ in lrs]
+        nets = [model_constructor(dropout=self.args.default_dropout, **model_parameters, ignore_flag=self.args.ignore_flag)
+                for _ in cutoffs]
         nets = [net.to(self.device) for net in nets]
         optimizers = [optim(net.parameters(), lr=self.args.default_lr, weight_decay=self.args.default_wd)
                     for net in nets]
@@ -91,32 +92,41 @@ class AdversarialShaping(Experiment):
         # train networks
         special_parameters = dict(
             manual_shape=True,
-            manual_frequency=-1,
-            manual_transform=[get_eval_transform_by_cutoff(co) for co in prms['cutoffs']],
+            manual_frequency=1,
+            manual_transforms=[get_eval_transform_by_cutoff(co) for co in prms['cutoffs']],
             manual_layers = nets[0].get_alignment_layer_indices(),
         )
 
-        train_results, test_results = processing.train_networks(self, nets, optimizers, dataset, **special_parameters)
+        train_results, test_results = processing.train_networks(self, nets, optimizers, dataset, alignment=False, **special_parameters)
 
-        # do targeted dropout experiment
-        dropout_results, dropout_parameters = processing.progressive_dropout_experiment(self, nets, dataset, alignment=test_results['alignment'], train_set=False)
-        
         # measure eigenfeatures
         eigen_results = processing.measure_eigenfeatures(self, nets, dataset, train_set=False)
 
-        # do targeted dropout experiment
-        evec_dropout_results, evec_dropout_parameters = processing.eigenvector_dropout(self, nets, dataset, eigen_results, train_set=False)
-        
+        # here, set up a processing method for doing adversarial attacks
+
+        # exp, nets, dataset, eigen_results, train_set=False, **parameters):
+        # """
+        # do adversarial attack and measure structure with regards to eigenfeatures
+        # """
+        # def get_beta(inputs, eigenvectors):
+        #     # get projection of input onto eigenvectors across layers
+        #     return [input.cpu() @ evec for input, evec in zip(inputs, eigenvectors)]
+
+        # # experiment parameters
+        # epsilons = parameters.get('epsilons')
+        # use_sign = parameters.get('use_sign')
+        # fgsm_transform = parameters.get('fgsm_transform', None)
+
+        # # data from eigenvectors
+        # eigenvectors = eigen_results['eigenvectors']
+
+
         # make full results dictionary
         results = dict(
             prms=prms,
             train_results=train_results,
             test_results=test_results,
-            dropout_results=dropout_results,
-            dropout_parameters=dropout_parameters,
             eigen_results=eigen_results,
-            evec_dropout_results=evec_dropout_results,
-            evec_dropout_parameters=evec_dropout_parameters,
         )    
 
         # return results and trained networks
@@ -127,6 +137,5 @@ class AdversarialShaping(Experiment):
         main plotting loop
         """
         plotting.plot_train_results(self, results['train_results'], results['test_results'], results['prms'])
-        plotting.plot_dropout_results(self, results['dropout_results'], results['dropout_parameters'], results['prms'], dropout_type='nodes')
         plotting.plot_eigenfeatures(self, results['eigen_results'], results['prms'])
-        plotting.plot_dropout_results(self, results['evec_dropout_results'], results['evec_dropout_parameters'], results['prms'], dropout_type='eigenvectors')
+        
