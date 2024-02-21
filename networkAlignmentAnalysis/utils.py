@@ -528,6 +528,20 @@ def weighted_average(data, weights, dim, keepdim=False, ignore_nan=False):
     # return weighted average
     return numerator / denominator
 
+def fgsm_attack(image, epsilon, data_grad, transform, sign):
+    """update an image with fast-gradient sign method"""
+    warn("fgsm_attack is only going to be in utils temporarily!", DeprecationWarning, stacklevel=2)
+    # Collect the element-wise sign of the data gradient
+    if sign:
+        data_grad = data_grad.sign()
+    else:
+        data_grad = data_grad.clone()
+    # Create the perturbed image by adjusting each pixel of the input image
+    perturbed_image = image + epsilon*data_grad
+    # Adding clipping to maintain [0,1] range
+    perturbed_image = transform(perturbed_image)
+    # Return the perturbed image
+    return perturbed_image
 
 def str2bool(str):
     if isinstance(str, bool):
