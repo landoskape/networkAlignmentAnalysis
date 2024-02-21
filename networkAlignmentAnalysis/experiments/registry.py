@@ -1,10 +1,12 @@
 from argparse import ArgumentParser
 from .alignment_comparison import AlignmentComparison
 from .alignment_stats import AlignmentStatistics
+from .adversarial_shaping import AdversarialShaping
 
 EXPERIMENT_REGISTRY = {
     'alignment_comparison': AlignmentComparison,
     'alignment_stats': AlignmentStatistics,
+    'adversarial_shaping': AdversarialShaping,
 }
 
 def get_experiment(experiment_name, build=False, **kwargs):
