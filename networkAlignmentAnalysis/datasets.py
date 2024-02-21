@@ -110,7 +110,7 @@ class DataSet(ABC):
         inputs, targets = inputs.to(device), targets.to(device)
         return inputs, targets
     
-    def make_transform(self, resize=None, flatten=False, out_channels=None):
+    def make_transform(self, center_crop=None, resize=None, flatten=False, out_channels=None):
         """
         create transform for dataloader
         resize is the new (H, W) shape of the image for the transforms.Resize transform (or None)
@@ -121,9 +121,13 @@ class DataSet(ABC):
             # Convert PIL Image to PyTorch Tensor
             transforms.ToImage(),
             transforms.ToDtype(torch.float32, scale=True),
-            # Normalize inputs to canonical distribution
-            transforms.Normalize((self.dist_params['mean'],), (self.dist_params['std'],)), 
-            ]
+        ]
+
+        if center_crop:
+            use_transforms.append(transforms.CenterCrop(center_crop))
+
+        # Normalize inputs to canonical distribution
+        use_transforms.append(transforms.Normalize((self.dist_params['mean']), (self.dist_params['std'])))
         
         # extra transforms depending on network
         if resize:
