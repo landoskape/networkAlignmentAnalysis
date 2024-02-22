@@ -14,42 +14,37 @@ def get_args(args=None):
     parser.add_argument('--network', type=str, default='MLP')
     parser.add_argument('--dataset', type=str, default='MNIST')
     parser.add_argument('--device', type=str, default=None)
+    parser.add_argument('--no-alignment', default=False, action='store_true')
+    parser.add_argument('--ignore-flag', default=False, action='store_true', help='if used, will omit flagged layers in analyses')
     return parser.parse_args(args=args)
 
 if __name__ == '__main__':
     args = get_args()
 
     DEVICE = args.device if args.device is not None else 'cuda' if torch.cuda.is_available() else 'cpu'
-    print('using device: ', DEVICE)
+    print('using device:', DEVICE, 'DeviceCount:', torch.cuda.device_count())
 
     # get network
     net_args = dict(
-        ignore_flag=False,
+        ignore_flag=args.ignore_flag,
     )
 
     net = get_model(args.network, build=True, **net_args).to(DEVICE)
+
     loader_parameters=dict(
-        batch_size=64,
-        num_workers=64,
+        batch_size=1024,
     )
     dataset = get_dataset(args.dataset, build=True, 
                           transform_parameters=net, 
                           loader_parameters=loader_parameters, 
+                          dataset_parameters=dict(download=True),
                           device=DEVICE)
 
-<<<<<<< HEAD
     optim = torch.optim.Adam(net.parameters(), lr=1e-3)
 
-    results = train.train([net], [optim], dataset, train_set=True, num_epochs=50, alignment=False)
+    alignment = True if not args.no_alignment else False
+    results = train.train([net], [optim], dataset, train_set=True, num_epochs=50, alignment=alignment)
 
     #betas, eigenvalues, eigenvectors = net.measure_eigenfeatures(dataset.test_loader)
     #net.shape_eigenfeatures(net.get_alignment_layer_indices(), eigenvalues, eigenvectors, lambda x: x)
-=======
-    optim = torch.optim.Adam(net.parameters(), lr=1e-2)
-
-    results = train.train([net], [optim], dataset, train_set=True, num_epochs=50, alignment=False)
-
-    # betas, eigenvalues, eigenvectors = net.measure_eigenfeatures(dataset.test_loader)
-    # net.shape_eigenfeatures(net.get_alignment_layer_indices(), eigenvalues, eigenvectors, lambda x: x)
->>>>>>> af8b19fe6e54e3bc803153ca3afe83294f0f65f4
 

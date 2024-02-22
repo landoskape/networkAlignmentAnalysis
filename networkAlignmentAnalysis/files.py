@@ -7,7 +7,7 @@ PATH_REGISTRY = {
     'Celia': Path('/Users/celiaberon/Documents/machine_learning'),
     'cberon': Path('/n/home00/cberon/alignment/'),
     'corwin': Path('/Users/corwin/Building'),
-    'atlandau': Path('/n/home05/atlandau/datasets')
+    'atlandau': Path('/n/home05/atlandau/machine_learning')
 }
 
 def get_hostname():
