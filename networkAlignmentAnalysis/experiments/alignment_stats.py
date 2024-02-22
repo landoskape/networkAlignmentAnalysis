@@ -1,8 +1,11 @@
 import torch
 
+import wandb
+
 from ..models.registry import get_model
-from .experiment import Experiment
 from . import arglib
+from .experiment import Experiment
+
 
 class AlignmentStatistics(Experiment):
     def get_basename(self):
@@ -21,6 +24,19 @@ class AlignmentStatistics(Experiment):
         parser = arglib.add_network_metaparameters(parser)
         parser = arglib.add_alignment_analysis_parameters(parser)
         return parser
+
+    def configure_wandb(self):
+        if self.args.use_wandb:
+            wandb.login()
+            run = wandb.init(
+                project='alignment_stats',
+                name='',
+                config=self.args
+            )
+        if str(self.basepath).startswith('/n/home00/cberon'):
+            os.environ['WANDB_MODE'] = 'offline'
+
+        return run 
     
     def load_networks(self):
         """
@@ -67,6 +83,9 @@ class AlignmentStatistics(Experiment):
         train and test networks
         do supplementary analyses
         """
+
+        run = self.configure_wandb()
+
         # load networks 
         nets, optimizers, prms = self.load_networks()
 
@@ -74,7 +93,7 @@ class AlignmentStatistics(Experiment):
         dataset = self.prepare_dataset(nets[0])
 
         # train networks
-        train_results, test_results = self.train_networks(nets, optimizers, dataset)
+        train_results, test_results = self.train_networks(nets, optimizers, dataset, run)
 
         # do targeted dropout experiment
         dropout_results, dropout_parameters = self.progressive_dropout_experiment(nets, dataset, alignment=test_results['alignment'], train_set=False)

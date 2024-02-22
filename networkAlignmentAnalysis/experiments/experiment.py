@@ -1,25 +1,21 @@
+import os
 from abc import ABC, abstractmethod
 from argparse import ArgumentParser
 from datetime import datetime
 from pathlib import Path
-import os
-from tqdm import tqdm
 from typing import Dict, List, Tuple
 
-from matplotlib import pyplot as plt
 import matplotlib as mpl
 import numpy as np
 import torch
+from matplotlib import pyplot as plt
+from tqdm import tqdm
 
-from .. import files
+from .. import files, train
 from ..datasets import get_dataset
-from ..utils import load_checkpoints
-from .. import train
-from ..utils import (compute_stats_by_type, 
-                     load_checkpoints, 
-                     named_transpose,
-                     transpose_list,
-                     rms)
+from ..utils import (compute_stats_by_type, load_checkpoints, named_transpose,
+                     rms, transpose_list)
+
 
 class Experiment(ABC):
     def __init__(self, args=None) -> None:
@@ -266,7 +262,7 @@ class Experiment(ABC):
                            loader_parameters={'batch_size': self.args.batch_size},
                            device=self.args.device)
     
-    def train_networks(self, nets, optimizers, dataset):
+    def train_networks(self, nets, optimizers, dataset, run=None):
         """train and test networks"""
         # do training loop
         parameters = dict(
@@ -275,6 +271,7 @@ class Experiment(ABC):
             alignment=not(self.args.no_alignment),
             delta_weights=self.args.delta_weights,
             frequency=self.args.frequency,
+            run=run,
         )
 
         if self.args.use_prev & os.path.isfile(self.get_checkpoint_path()):
