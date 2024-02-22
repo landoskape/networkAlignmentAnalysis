@@ -1,7 +1,8 @@
 import os
 from tqdm import tqdm
+import torch
 from . import train
-from .utils import load_checkpoints
+from .utils import load_checkpoints, test_nets, transpose_list, fgsm_attack
 
 def train_networks(exp, nets, optimizers, dataset, **special_parameters):
     """train and test networks"""
@@ -72,7 +73,8 @@ def measure_eigenfeatures(exp, nets, dataset, train_set=False):
         class_betas.append(beta_by_class)
 
     # make it a dictionary
-    return dict(beta=beta, eigvals=eigvals, eigvecs=eigvecs, class_betas=class_betas, class_names=dataloader.dataset.classes) 
+    class_names = getattr(dataset.train_loader if train_set else dataset.test_loader, 'dataset').classes
+    return dict(beta=beta, eigvals=eigvals, eigvecs=eigvecs, class_betas=class_betas, class_names=class_names) 
 
 def eigenvector_dropout(exp, nets, dataset, eigen_results, train_set=False):
     """
@@ -83,3 +85,102 @@ def eigenvector_dropout(exp, nets, dataset, eigen_results, train_set=False):
     evec_dropout_parameters = dict(num_drops=exp.args.num_drops, by_layer=exp.args.dropout_by_layer, train_set=train_set)
     evec_dropout_results = train.eigenvector_dropout(nets, dataset, eigen_results['eigvals'], eigen_results['eigvecs'], **evec_dropout_parameters)
     return evec_dropout_results, evec_dropout_parameters
+
+@test_nets
+def measure_adversarial_attacks(exp, nets, dataset, eigen_results, train_set=False, **parameters):
+    """
+    do adversarial attack and measure structure with regards to eigenfeatures
+    """
+    def get_beta(inputs, eigenvectors):
+        # get projection of input onto eigenvectors across layers
+        return [input.cpu() @ evec for input, evec in zip(inputs, eigenvectors)]
+
+    # experiment parameters
+    epsilons = parameters.get('epsilons')
+    use_sign = parameters.get('use_sign')
+    fgsm_transform = parameters.get('fgsm_transform', None)
+
+    # data from eigenvectors
+    eigenvectors = eigen_results['eigenvectors']
+
+    num_eps = len(epsilons)
+    num_nets = len(nets)
+    accuracy = torch.zeros((num_nets, num_eps))
+    examples = [[[] for _ in range(num_eps)] for _ in range(num_nets)]
+    betas = [[torch.zeros((num_nets, evec.size(0))) for evec in eigenvectors[0]]
+             for _ in range(num_eps)]
+
+    # dataloader
+    dataloader = dataset.train_loader if train else dataset.test_loader
+
+    for batch in tqdm(dataloader):
+        input, labels = dataset.unwrap_batch(batch)
+        
+        inputs = [input.clone() for _ in range(num_nets)]
+
+        for input in inputs:
+            input.requires_grad = True
+
+        # Forward pass the data through the model
+        outputs = [net(input, store_hidden=True) for net, input in zip(nets, inputs)]
+        input_to_layers = [net.get_layer_inputs(input, precomputed=True) for net in nets]
+        init_preds = [torch.argmax(output,axis=1) for output in outputs] # find true prediction
+        least_likely = [torch.argmin(output,axis=1) for output in outputs] # find least likely digit according to model
+        
+        c_betas = transpose_list([get_beta(input, evec) for input, evec in zip(input_to_layers, eigenvectors)])
+        s_betas = [torch.stack(cb) for cb in c_betas]
+
+        # Calculate the loss
+        loss = [dataset.measure_loss(output, labels) for output in outputs]
+        # loss = dataset.measure_loss(output, least_likely)
+
+        # Zero all existing gradients
+        for net in nets:
+            net.zero_grad()
+
+        # Calculate gradients of model in backward pass
+        for l in loss:
+            l.backward()
+
+        # Collect datagrad
+        data_grads = [input.grad.data for input in inputs]
+        
+        for epsidx, eps in enumerate(epsilons):
+            
+            # Call FGSM Attack
+            perturbed_inputs = [fgsm_attack(input, eps, data_grad, fgsm_transform, use_sign)
+                                for input, data_grad in zip(inputs, data_grads)]
+
+            # Re-classify the perturbed image
+            outputs = [net(perturbed_input, store_hidden=True)
+                       for net, perturbed_input in zip(nets, perturbed_inputs)]
+            input_to_layers = [net.get_layer_inputs(perturbed_input, precomputed=True)
+                               for net, perturbed_input in zip(nets, perturbed_inputs)]
+            c_eps_betas = transpose_list([get_beta(input, evec) for input, evec in zip(input_to_layers, eigenvectors)])
+            s_eps_betas = [torch.stack(ceb) for ceb in c_eps_betas]
+            d_eps_betas = [sebeta - sbeta for sebeta, sbeta in zip(s_eps_betas, s_betas)]
+            rms_betas = [torch.sqrt(torch.mean(db**2, dim=1)) for db in d_eps_betas]
+
+            for ii, rbeta in enumerate(rms_betas):
+                betas[epsidx][ii] += rbeta
+
+            # Check for success
+            final_preds = [torch.argmax(output, axis=1) for output in outputs]
+            accuracy[:, epsidx] += torch.tensor([sum(final_pred==labels).cpu() for final_pred in final_preds])
+            
+            # Idx where adversarial example worked
+            idx_success = [torch.where((init_pred==labels) & (final_pred != labels))[0].cpu()
+                           for init_pred, final_pred in zip(init_preds, final_preds)]
+            
+            adv_exs = [perturbed_input.detach().cpu().numpy() for perturbed_input in perturbed_inputs]
+            for ii, (adv_ex, idx, init_pred, final_pred) in enumerate(zip(adv_exs, idx_success, init_preds, final_preds)):
+                examples[ii][epsidx].append((init_pred[idx], final_pred[idx], adv_ex[idx]))
+
+    # Calculate final accuracy for this epsilon
+    accuracy = accuracy / float(len(dataloader.dataset))
+
+    # Average across betas
+    betas = [[cb / float(len(dataloader.dataset)) for cb in beta] for beta in betas]
+        
+    # Return the accuracy and an adversarial example
+    return accuracy, betas, examples

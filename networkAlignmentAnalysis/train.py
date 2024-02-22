@@ -1,10 +1,8 @@
-import time
 from copy import copy, deepcopy
 from tqdm import tqdm
 import torch
 from networkAlignmentAnalysis.utils import (transpose_list,
                                             condense_values,
-                                            value_by_layer,
                                             test_nets,
                                             train_nets,
                                             save_checkpoint)
@@ -85,7 +83,7 @@ def train(nets, optimizers, dataset, **parameters):
             loss = [dataset.measure_loss(output, labels) for output in outputs]
             for l, opt in zip(loss, optimizers):
                 l.backward() 
-                opt.step() 
+                opt.step()
                 
             results['loss'][cidx] = torch.tensor([l.item() for l in loss])
             results['accuracy'][cidx] = torch.tensor([dataset.measure_accuracy(output, labels) for output in outputs])
@@ -100,26 +98,16 @@ def train(nets, optimizers, dataset, **parameters):
                     # Measure change in weights if requested
                     results['delta_weights'].append([net.compare_weights(init_weight)
                                                     for net, init_weight in zip(nets, results['init_weights'])])
-            
-            if manual_shape:
-                if manual_frequency>0 and (idx % manual_frequency):
-                    for net, transform in zip(nets, manual_transforms):
-                        # just use this minibatch for computing eigenfeatures
-                        _, eigenvalues, eigenvectors = net.measure_eigenfeatures(images, with_updates=False)
-                        idx_to_layer_lookup = {layer: idx for idx, layer in enumerate(net.get_alignment_layer_indices())}
-                        eigenvalues = [eigenvalues[idx_to_layer_lookup[ml]] for ml in manual_layers]
-                        eigenvectors = [eigenvectors[idx_to_layer_lookup[ml]] for ml in manual_layers]
-                        net.shape_eigenfeatures(manual_layers, eigenvalues, eigenvectors, transform)
-        
+
         if manual_shape:
-            if manual_frequency<0 and (epoch % torch.abs(manual_frequency)):
+            if epoch % manual_frequency == 0:
                 for net, transform in zip(nets, manual_transforms):
                     # just use this minibatch for computing eigenfeatures
-                    images, _ = net._process_collect_activity(dataset,
+                    inputs, _ = net._process_collect_activity(dataset,
                                                               train_set=use_train,
                                                               with_updates=False,
                                                               use_training_mode=False)
-                    _, eigenvalues, eigenvectors = net.measure_eigenfeatures(images, with_updates=False)
+                    _, eigenvalues, eigenvectors = net.measure_eigenfeatures(inputs, with_updates=False)
                     idx_to_layer_lookup = {layer: idx for idx, layer in enumerate(net.get_alignment_layer_indices())}
                     eigenvalues = [eigenvalues[idx_to_layer_lookup[ml]] for ml in manual_layers]
                     eigenvectors = [eigenvectors[idx_to_layer_lookup[ml]] for ml in manual_layers]

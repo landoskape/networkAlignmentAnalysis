@@ -37,10 +37,19 @@ if __name__ == '__main__':
                           loader_parameters=loader_parameters, 
                           device=DEVICE)
 
+<<<<<<< HEAD
     optim = torch.optim.Adam(net.parameters(), lr=1e-3)
 
     results = train.train([net], [optim], dataset, train_set=True, num_epochs=50, alignment=False)
 
     #betas, eigenvalues, eigenvectors = net.measure_eigenfeatures(dataset.test_loader)
     #net.shape_eigenfeatures(net.get_alignment_layer_indices(), eigenvalues, eigenvectors, lambda x: x)
+=======
+    optim = torch.optim.Adam(net.parameters(), lr=1e-2)
+
+    results = train.train([net], [optim], dataset, train_set=True, num_epochs=50, alignment=False)
+
+    # betas, eigenvalues, eigenvectors = net.measure_eigenfeatures(dataset.test_loader)
+    # net.shape_eigenfeatures(net.get_alignment_layer_indices(), eigenvalues, eigenvectors, lambda x: x)
+>>>>>>> af8b19fe6e54e3bc803153ca3afe83294f0f65f4
 
