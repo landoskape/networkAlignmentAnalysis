@@ -28,12 +28,19 @@ if __name__ == '__main__':
     )
 
     net = get_model(args.network, build=True, **net_args).to(DEVICE)
-    dataset = get_dataset(args.dataset, build=True, transform_parameters=net, device=DEVICE)
+    loader_parameters=dict(
+        batch_size=64,
+        num_workers=64,
+    )
+    dataset = get_dataset(args.dataset, build=True, 
+                          transform_parameters=net, 
+                          loader_parameters=loader_parameters, 
+                          device=DEVICE)
 
-    # optim = torch.optim.Adam(net.parameters(), lr=1e-2)
+    optim = torch.optim.Adam(net.parameters(), lr=1e-3)
 
-    # results = train.train([net], [optim], dataset, train_set=True, num_epochs=50, alignment=False)
+    results = train.train([net], [optim], dataset, train_set=True, num_epochs=50, alignment=False)
 
-    betas, eigenvalues, eigenvectors = net.measure_eigenfeatures(dataset.test_loader)
-    net.shape_eigenfeatures(net.get_alignment_layer_indices(), eigenvalues, eigenvectors, lambda x: x)
+    #betas, eigenvalues, eigenvectors = net.measure_eigenfeatures(dataset.test_loader)
+    #net.shape_eigenfeatures(net.get_alignment_layer_indices(), eigenvalues, eigenvectors, lambda x: x)
 
