@@ -35,6 +35,8 @@ def add_checkpointing(parser):
     """
     parser.add_argument('--use_prev', default=False, action='store_true', help='if used, will pick up training off previous checkpoint')
     parser.add_argument('--save_ckpts', default=False, action='store_true', help='if used, will save checkpoints of models')
+    parser.add_argument('--use_wandb', default=False, action='store_true', help='if used, will log experiment to WandB')
+
     return parser
 
 def add_dropout_experiment_details(parser):

@@ -1,15 +1,17 @@
+import os
 from abc import ABC, abstractmethod
 from argparse import ArgumentParser
 from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Tuple
 
-from matplotlib import pyplot as plt
 import torch
+import wandb
+from matplotlib import pyplot as plt
 
 from .. import files
 from ..datasets import get_dataset
-                    
+
 class Experiment(ABC):
     def __init__(self, args=None) -> None:
         """Experiment constructor"""
@@ -83,7 +85,6 @@ class Experiment(ABC):
             exp_path = exp_path / self.timestamp
 
         return exp_path
-
     
     def get_path(self, name, create=True) -> Path:
         """Method for returning path to file"""
@@ -93,6 +94,25 @@ class Experiment(ABC):
         # return full path (including stem)
         return exp_path / name
     
+    def configure_wandb(self):
+        if self.args.use_wandb:
+            wandb.login()
+            run = wandb.init(
+                project=self.get_basename(),
+                name='',
+                config=self.args,
+            )
+        
+            if str(self.basepath).startswith('/n/home'):
+                # ATL Note 240223: We can update the "startswith" list to be
+                # a registry of path locations that require WANDB_MODE to be offline
+                # in a smarter way, but I think that using /n/ is sufficient in general
+                os.environ['WANDB_MODE'] = 'offline'
+
+            return run
+        
+        return None
+        
     @abstractmethod
     def get_basename(self) -> str:
         """Required method for defining the base name of the Experiment"""

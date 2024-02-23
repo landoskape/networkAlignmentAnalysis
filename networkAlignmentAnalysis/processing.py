@@ -4,7 +4,7 @@ import torch
 from . import train
 from .utils import load_checkpoints, test_nets, transpose_list, fgsm_attack
 
-def train_networks(exp, nets, optimizers, dataset, **special_parameters):
+def train_networks(exp, nets, optimizers, dataset, run=None, **special_parameters):
     """train and test networks"""
     # do training loop
     parameters = dict(
@@ -13,6 +13,7 @@ def train_networks(exp, nets, optimizers, dataset, **special_parameters):
         alignment=not(exp.args.no_alignment),
         delta_weights=exp.args.delta_weights,
         frequency=exp.args.frequency,
+        run=run,
     )
 
     # update with special parameters

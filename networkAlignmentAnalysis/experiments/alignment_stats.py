@@ -1,10 +1,9 @@
 import torch
-
 from ..models.registry import get_model
-from .experiment import Experiment
 from . import arglib
 from .. import processing
 from .. import plotting
+from .experiment import Experiment
 
 
 class AlignmentStatistics(Experiment):
@@ -24,6 +23,7 @@ class AlignmentStatistics(Experiment):
         parser = arglib.add_network_metaparameters(parser)
         parser = arglib.add_alignment_analysis_parameters(parser)
         return parser
+
     
     def load_networks(self):
         """
@@ -70,6 +70,9 @@ class AlignmentStatistics(Experiment):
         train and test networks
         do supplementary analyses
         """
+
+        run = self.configure_wandb()
+
         # load networks 
         nets, optimizers, prms = self.load_networks()
 
@@ -77,7 +80,7 @@ class AlignmentStatistics(Experiment):
         dataset = self.prepare_dataset(nets[0])
 
         # train networks
-        train_results, test_results = processing.train_networks(self, nets, optimizers, dataset)
+        train_results, test_results = processing.train_networks(self, nets, optimizers, dataset, run)
 
         # do targeted dropout experiment
         dropout_results, dropout_parameters = processing.progressive_dropout_experiment(self, nets, dataset, alignment=test_results['alignment'], train_set=False)

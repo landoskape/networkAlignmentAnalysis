@@ -1,6 +1,7 @@
 from copy import copy, deepcopy
 from tqdm import tqdm
 import torch
+import wandb
 from networkAlignmentAnalysis.utils import (transpose_list,
                                             condense_values,
                                             test_nets,
@@ -22,6 +23,9 @@ def train(nets, optimizers, dataset, **parameters):
     use_train = parameters.get('train_set', True)
     dataloader = dataset.train_loader if use_train else dataset.test_loader
     num_steps = len(dataset.train_loader)*parameters['num_epochs']
+    
+    # --- optional W&B logging ---
+    run = parameters.get('run')
 
     # --- optional analyses ---
     measure_alignment = parameters.get('alignment', True)
@@ -99,6 +103,12 @@ def train(nets, optimizers, dataset, **parameters):
                     results['delta_weights'].append([net.compare_weights(init_weight)
                                                     for net, init_weight in zip(nets, results['init_weights'])])
 
+            if run is not None:
+                run.log({f'losses/loss-{ii}': l.item() for ii, l in enumerate(loss)}
+                          | {f'accuracies/accuracy-{ii}': dataset.measure_accuracy(output, labels) for ii, output in enumerate(outputs)}
+                        #   | {f'alignments/alignment-{ii}': alignment for ii, alignment in enumerate(results['alignment'][-1])}
+                          | {'batch': cidx})
+
         if manual_shape:
             if epoch % manual_frequency == 0:
                 for net, transform in zip(nets, manual_transforms):
@@ -112,6 +122,7 @@ def train(nets, optimizers, dataset, **parameters):
                     eigenvalues = [eigenvalues[idx_to_layer_lookup[ml]] for ml in manual_layers]
                     eigenvectors = [eigenvectors[idx_to_layer_lookup[ml]] for ml in manual_layers]
                     net.shape_eigenfeatures(manual_layers, eigenvalues, eigenvectors, transform)
+
 
         if save_ckpt & (epoch % freq_ckpt == 0):
             save_checkpoint(nets,
@@ -133,6 +144,9 @@ def train(nets, optimizers, dataset, **parameters):
 @test_nets
 def test(nets, dataset, **parameters):
     """method for testing network on supervised learning problem"""
+    
+    # --- optional W&B logging ---
+    run = parameters.get('run')
 
     # input argument checks
     if not(isinstance(nets, list)): nets = [nets]
@@ -174,7 +188,7 @@ def test(nets, dataset, **parameters):
         if measure_alignment:
             alignment.append([net.measure_alignment(images, precomputed=True, method='alignment')
                               for net in nets])
-    
+
     results = {
         'loss': [loss / num_batches for loss in total_loss],
         'accuracy': [correct / num_batches for correct in num_correct],
@@ -182,6 +196,10 @@ def test(nets, dataset, **parameters):
 
     if measure_alignment:
         results['alignment'] = condense_values(transpose_list(alignment))
+
+    if run is not None:
+        run.summary['test_loss'] = torch.mean(torch.tensor(results['loss']))
+        run.summary['test_accuracy'] = torch.mean(torch.tensor(results['accuracy']))
 
     return results
 
