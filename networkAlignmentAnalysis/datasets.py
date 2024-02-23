@@ -165,7 +165,7 @@ class MNIST(DataSet):
         self.dataset_path = files.dataset_path("MNIST")
         self.dataset_constructor = torchvision.datasets.MNIST
         self.loss_function = nn.CrossEntropyLoss()
-        self.dist_params = dict(mean=0.1307, std=0.3081)
+        self.dist_params = dict(mean=[0.1307], std=[0.3081])
 
     def dataset_kwargs(self, train=True, download=False):
         """set data constructor kwargs for MNIST"""

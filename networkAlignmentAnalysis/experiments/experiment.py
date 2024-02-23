@@ -95,6 +95,7 @@ class Experiment(ABC):
         return exp_path / name
     
     def configure_wandb(self):
+        """create a wandb run file and set environment parameters appropriately"""
         if self.args.use_wandb:
             wandb.login()
             run = wandb.init(
