@@ -131,7 +131,7 @@ class DataSet(ABC):
         
         # extra transforms depending on network
         if resize:
-            use_transforms.append(transforms.Resize(resize))
+            use_transforms.append(transforms.Resize(resize, antialias=True))
         if out_channels:
             use_transforms.append(transforms.Grayscale(num_output_channels=out_channels))
         if flatten:
@@ -264,3 +264,21 @@ def get_dataset(dataset_name, build=False, dataset_parameters={}, transform_para
     
     # Otherwise return the constructor
     return dataset
+
+
+if __name__ == "__main__":
+    """simple program for downloading a dataset"""
+
+    from argparse import ArgumentParser
+    def get_args(args=None):
+        parser = ArgumentParser(description='simple program for downloading a dataset to the local file location')
+        parser.add_argument('--dataset', type=str, default='MNIST')
+        return parser.parse_args(args=args)
+    
+    args = get_args()
+
+    dataset = get_dataset(
+        args.dataset, 
+        build=True,  
+        dataset_parameters=dict(download=True)
+    )
