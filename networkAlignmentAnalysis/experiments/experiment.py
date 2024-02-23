@@ -281,6 +281,8 @@ class Experiment(ABC):
         # if saving, then save the plot
         if not self.args.nosave:
             plt.savefig(str(self.get_path(name)))
+        if self.run is not None:
+            self.run.log({name: plt.gcf()})
         # show the plot now if not doing showall
         if not self.args.showall:
             plt.show()

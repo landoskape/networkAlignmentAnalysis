@@ -102,10 +102,10 @@ def train(nets, optimizers, dataset, **parameters):
                                                     for net, init_weight in zip(nets, results['init_weights'])])
 
             if run is not None:
-                run.log({f'losses/loss-{ii}': l.item() for ii, l in enumerate(loss)}
-                          | {f'accuracies/accuracy-{ii}': dataset.measure_accuracy(output, labels) for ii, output in enumerate(outputs)}
-                        #   | {f'alignments/alignment-{ii}': alignment for ii, alignment in enumerate(results['alignment'][-1])}
-                          | {'batch': cidx})
+                run.log({f'losses/loss-{ii}': l.item() for ii, l in enumerate(loss)},
+                        {f'accuracies/accuracy-{ii}': dataset.measure_accuracy(output, labels) for ii, output in enumerate(outputs)},
+                        # {f'alignments/alignment-{ii}': alignment for ii, alignment in enumerate(results['alignment'][-1])}
+                        {'batch': cidx})
 
         if manual_shape:
             if epoch % manual_frequency == 0:

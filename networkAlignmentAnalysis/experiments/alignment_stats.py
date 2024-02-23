@@ -71,7 +71,7 @@ class AlignmentStatistics(Experiment):
         do supplementary analyses
         """
 
-        run = self.configure_wandb()
+        self.run = self.configure_wandb()
 
         # load networks 
         nets, optimizers, prms = self.load_networks()
@@ -80,7 +80,7 @@ class AlignmentStatistics(Experiment):
         dataset = self.prepare_dataset(nets[0])
 
         # train networks
-        train_results, test_results = processing.train_networks(self, nets, optimizers, dataset, run)
+        train_results, test_results = processing.train_networks(self, nets, optimizers, dataset, self.run)
 
         # do targeted dropout experiment
         dropout_results, dropout_parameters = processing.progressive_dropout_experiment(self, nets, dataset, alignment=test_results['alignment'], train_set=False)
