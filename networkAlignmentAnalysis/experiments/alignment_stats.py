@@ -78,7 +78,7 @@ class AlignmentStatistics(Experiment):
         dataset = self.prepare_dataset(nets[0])
 
         # train networks
-        train_results, test_results = processing.train_networks(self, nets, optimizers, dataset, self.run)
+        train_results, test_results = processing.train_networks(self, nets, optimizers, dataset)
 
         # do targeted dropout experiment
         dropout_results, dropout_parameters = processing.progressive_dropout_experiment(self, nets, dataset, alignment=test_results['alignment'], train_set=False)
