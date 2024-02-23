@@ -282,7 +282,7 @@ class Experiment(ABC):
         if not self.args.nosave:
             plt.savefig(str(self.get_path(name)))
         if self.run is not None:
-            self.run.log({name: plt.gcf()})
+            self.run.log({name: wandb.Image(plt)})
         # show the plot now if not doing showall
         if not self.args.showall:
             plt.show()
