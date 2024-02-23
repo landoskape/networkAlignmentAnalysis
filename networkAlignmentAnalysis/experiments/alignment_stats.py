@@ -71,8 +71,6 @@ class AlignmentStatistics(Experiment):
         do supplementary analyses
         """
 
-        self.run = self.configure_wandb()
-
         # load networks 
         nets, optimizers, prms = self.load_networks()
 

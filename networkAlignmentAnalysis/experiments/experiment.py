@@ -19,6 +19,7 @@ class Experiment(ABC):
         self.basepath = files.results_path() / self.basename # Register basepath of experiment
         self.get_args(args=args) # Parse arguments to python program
         self.register_timestamp() # Register timestamp of experiment
+        self.run = self.configure_wandb() # Create a wandb run object (or None depending on args.use_wandb)
         self.device = self.args.device
 
     def report(self, init=False, args=False, meta_args=False) -> None:
