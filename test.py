@@ -45,6 +45,7 @@ if __name__ == '__main__':
     alignment = True if not args.no_alignment else False
     results = train.train([net], [optim], dataset, train_set=True, num_epochs=50, alignment=alignment)
 
-    #betas, eigenvalues, eigenvectors = net.measure_eigenfeatures(dataset.test_loader)
-    #net.shape_eigenfeatures(net.get_alignment_layer_indices(), eigenvalues, eigenvectors, lambda x: x)
+    # inputs, labels = net._process_collect_activity(dataset, train_set=False, with_updates=True, use_training_mode=True)
+    # betas, eigenvalues, eigenvectors = net.measure_eigenfeatures(inputs)
+    # net.shape_eigenfeatures(net.get_alignment_layer_indices(), eigenvalues, eigenvectors, lambda x: x)
 
