@@ -1,13 +1,11 @@
 from copy import copy, deepcopy
 from tqdm import tqdm
 import torch
-import wandb
 from networkAlignmentAnalysis.utils import (transpose_list,
                                             condense_values,
                                             test_nets,
                                             train_nets,
                                             save_checkpoint)
-
 
 @train_nets
 def train(nets, optimizers, dataset, **parameters):
