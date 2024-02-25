@@ -45,7 +45,7 @@ def train(dataset, model, criterion, optimizer, epoch, device, train=True):
 
         # compute output
         output = model(images)
-        loss = criterion(output, target)
+        loss = dataset.measure_loss(output, target)
 
         # compute gradient and do SGD step
         optimizer.zero_grad()
