@@ -24,8 +24,8 @@ def setup(rank, world_size):
 def cleanup():
     dist.destroy_process_group()
 
-def create_dataset(net):
-    return datasets.get_dataset('MNIST', build=True, distributed=True, transform_parameters=net)
+def create_dataset(net, distributed=True):
+    return datasets.get_dataset('MNIST', build=True, distributed=distributed, transform_parameters=net)
 
 def train(dataset, model, optimizer, epoch, device, train=True):
     # switch to train mode
@@ -37,7 +37,7 @@ def train(dataset, model, optimizer, epoch, device, train=True):
         datasampler.set_epoch(epoch)
 
     start_time = time.time()
-    for i, (images, target) in tqdm(enumerate(dataloader)):
+    for i, (images, target) in enumerate(dataloader):
         if i==0:
             first_batch_time = time.time() - start_time
 
@@ -64,20 +64,35 @@ def demo_basic(rank, world_size):
     # create model and move it to GPU with id rank
     model = get_model('MLP', build=True, dataset='MNIST').to(rank)
     ddp_model = DDP(model, device_ids=[rank])
-
-    loss_fn = nn.MSELoss()
     optimizer = optim.SGD(ddp_model.parameters(), lr=0.001)
 
-    dataset = create_dataset(model)
+    dataset = create_dataset(model, distributed=True)
 
-    num_epochs = 2
+    t = time.time()
+    num_epochs = 10
     for epoch in range(num_epochs):
         train(dataset, ddp_model, optimizer, epoch, device=f"cuda:{rank}", train=True)
-    
+    print('total with ddp:', time.time() - t)
+
     # cleanup
     cleanup()
 
+def demo_noddp():
+    print(f"Running basic example without DDP")
 
+    # create model and move it to GPU with id rank
+    model = get_model('MLP', build=True, dataset='MNIST').to('cuda')
+
+    optimizer = optim.SGD(model.parameters(), lr=0.001)
+
+    dataset = create_dataset(model, distributed=False)
+
+    t = time.time()
+    num_epochs = 10
+    for epoch in range(num_epochs):
+        train(dataset, model, optimizer, epoch, device="cuda", train=True)
+    print('total noddp:', time.time() - t)
+    
 def run_demo(demo_fn, world_size):
     mp.spawn(demo_fn,
              args=(world_size,),
@@ -92,6 +107,7 @@ if __name__ == "__main__":
     assert n_gpus >= 2, f"Requires at least 2 GPUs to run, but got {n_gpus}"
     world_size = n_gpus
     run_demo(demo_basic, world_size)
+    demo_noddp()
 
 
 
