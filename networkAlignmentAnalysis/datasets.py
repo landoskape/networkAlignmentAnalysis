@@ -5,6 +5,7 @@ import numpy as np
 import torch
 import torchvision
 from torch import nn
+from torch.utils.data.distributed import DistributedSampler
 from torchvision.transforms import v2 as transforms
 
 from . import files
@@ -12,7 +13,7 @@ from .models.base import AlignmentNetwork
 
 REQUIRED_PROPERTIES = ['dataset_path', 'dataset_constructor', 'loss_function']
 
-def default_loader_parameters(batch_size=1024, num_workers=2, shuffle=True, pin_memory=True, persistent_workers=True):
+def default_loader_parameters(distributed, batch_size=1024, num_workers=2, shuffle=True, pin_memory=True, persistent_workers=True):
     """
     contains the default dataloader parameters with the option of updating them
     using key word argument
@@ -20,20 +21,21 @@ def default_loader_parameters(batch_size=1024, num_workers=2, shuffle=True, pin_
     default_parameters = dict(
         batch_size=batch_size,
         num_workers=num_workers, # usually 2 workers is appropriate for swapping loading during batch processing
-        shuffle=shuffle,
+        shuffle=False if distributed else shuffle, # can't use shuffle=True if using DDP
         pin_memory=pin_memory,
         persistent_workers=persistent_workers,
     )
     return default_parameters
 
 class DataSet(ABC):
-    def __init__(self, device=None, dataset_parameters={}, transform_parameters={}, loader_parameters={}):
+    def __init__(self, device=None, distributed=False, dataset_parameters={}, transform_parameters={}, loader_parameters={}):
         # set properties of dataset and check that all required properties are defined
         self.set_properties() 
         self.check_properties() 
 
         # define device for dataloading
         self.device = device if device is not None else ('cuda' if torch.cuda.is_available() else 'cpu')
+        self.distributed = distributed
 
         # define extra transform (should be a callable method or None) for any transformations that 
         # can't go in the torchvision.transforms.Compose(...), hopefully this won't be needed later 
@@ -45,7 +47,7 @@ class DataSet(ABC):
         self.make_transform(**transform_parameters) 
 
         # define the dataloader parameters
-        self.dataloader_parameters = default_loader_parameters(**loader_parameters) # get dataloader parameters
+        self.dataloader_parameters = default_loader_parameters(distributed, **loader_parameters) # get dataloader parameters
         
         # load the dataset and create the dataloaders
         self.dataset_parameters = dataset_parameters
@@ -99,8 +101,10 @@ class DataSet(ABC):
         """load dataset using the established path and parameters"""
         self.train_dataset = self.dataset_constructor(**self.dataset_kwargs(train=True, **kwargs))
         self.test_dataset = self.dataset_constructor(**self.dataset_kwargs(train=False, **kwargs))
-        self.train_loader = torch.utils.data.DataLoader(self.train_dataset, **self.dataloader_parameters)
-        self.test_loader = torch.utils.data.DataLoader(self.test_dataset, **self.dataloader_parameters)
+        self.train_sampler = DistributedSampler(self.train_dataset) if self.distributed else None
+        self.test_sampler = DistributedSampler(self.test_dataset) if self.distributed else None
+        self.train_loader = torch.utils.data.DataLoader(self.train_dataset, sampler=self.train_sampler, **self.dataloader_parameters)
+        self.test_loader = torch.utils.data.DataLoader(self.test_dataset, sampler=self.test_sampler, **self.dataloader_parameters)
 
     def unwrap_batch(self, batch, device=None):
         """simple method for unwrapping batch for simple training loops"""
