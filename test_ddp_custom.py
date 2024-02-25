@@ -1,6 +1,7 @@
 import os
 import sys
 import tempfile
+from tqdm import tqdm
 import torch
 import torch.distributed as dist
 import torch.nn as nn
@@ -26,7 +27,7 @@ def cleanup():
 def create_dataset(net):
     return datasets.get_dataset('MNIST', build=True, distributed=True, transform_parameters=net)
 
-def train(dataset, model, criterion, optimizer, epoch, device, train=True):
+def train(dataset, model, optimizer, epoch, device, train=True):
     # switch to train mode
     model.train()
     dataloader = dataset.train_loader if train else dataset.test_loader
@@ -35,9 +36,10 @@ def train(dataset, model, criterion, optimizer, epoch, device, train=True):
     if dataset.distributed:
         datasampler.set_epoch(epoch)
 
-    end = time.time()
-    for i, (images, target) in enumerate(dataloader):
-        print('data loading time:', time.time() - end)
+    start_time = time.time()
+    for i, (images, target) in tqdm(enumerate(dataloader)):
+        if i==0:
+            first_batch_time = time.time() - start_time
 
         # move data to the same device as model
         images = images.to(device, non_blocking=True)
@@ -52,9 +54,8 @@ def train(dataset, model, criterion, optimizer, epoch, device, train=True):
         loss.backward()
         optimizer.step()
 
-        # measure elapsed time
-        print('total batch time:', time.time() - end)
-        end = time.time()
+    full_epoch_time = time.time() - start_time
+    print('Epoch:', epoch, 'Device:', device, 'First batch:', first_batch_time, 'All batches:', full_epoch_time)
 
 def demo_basic(rank, world_size):
     print(f"Running basic DDP example on rank {rank}.")
@@ -69,9 +70,9 @@ def demo_basic(rank, world_size):
 
     dataset = create_dataset(model)
 
-    num_epochs = 1
+    num_epochs = 2
     for epoch in range(num_epochs):
-        train(dataset, ddp_model, loss_fn, optimizer, epoch, device=f"cuda:{rank}", train=True)
+        train(dataset, ddp_model, optimizer, epoch, device=f"cuda:{rank}", train=True)
     
     # cleanup
     cleanup()
