@@ -32,7 +32,8 @@ class AdversarialShaping(Experiment):
         # add special experiment parameters
         # -- the "comparison" determines what should be compared by the script --
         # -- depending on selection, something about the networks are varied throughout the experiment --
-        parser.add_argument('--cutoffs', type=float, nargs='*', default=[1e-2, 1e-3, 1e-4], help='what fraction of total variance to cut eigenvalues off at')
+        parser.add_argument('--cutoffs', type=float, nargs='*', default=[1e-2, 1e-3, 1e-4, 0.0], help='what fraction of total variance to cut eigenvalues off at')
+        parser.add_argument('--manual-frequency', type=int, default=5, help='how frequently (by epoch) to do manual shaping with eigenvectors')
         
         # return parser
         return parser
@@ -92,12 +93,12 @@ class AdversarialShaping(Experiment):
         # train networks
         special_parameters = dict(
             manual_shape=True,
-            manual_frequency=1,
+            manual_frequency=5,
             manual_transforms=[get_eval_transform_by_cutoff(co) for co in prms['cutoffs']],
             manual_layers = nets[0].get_alignment_layer_indices(),
         )
 
-        train_results, test_results = processing.train_networks(self, nets, optimizers, dataset, alignment=False, **special_parameters)
+        train_results, test_results = processing.train_networks(self, nets, optimizers, dataset, alignment=True, **special_parameters)
 
         # measure eigenfeatures
         eigen_results = processing.measure_eigenfeatures(self, nets, dataset, train_set=False)
