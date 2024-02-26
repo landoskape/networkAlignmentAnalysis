@@ -350,6 +350,65 @@ def plot_eigenfeatures(exp, results, prms):
 
     
 
+def plot_adversarial_results(exp, eigen_results, adversarial_results, prms):
+    accuracy, beta, eigvals = adversarial_results['accuracy'], adversarial_results['betas'], eigen_results['eigvals']
+    epsilons, use_sign = adversarial_results['epsilons'], adversarial_results['use_sign']
+
+    num_types = len(prms['vals'])
+    labels = [f"{prms['name']}={val}" for val in prms['vals']]
+    cmap = mpl.colormaps['tab10']
+
+    print("measuring statistics of adversarial analyses...")
+
+    # shape wrangling
+    accuracy = torch.stack([torch.stack(acc) for acc in transpose_list(accuracy)]) # (num_epsilon, num_nets)
+    eigvals = [torch.stack(ev) for ev in transpose_list(eigvals)] # [(num_nets, dim_layer) for each layer]
+    beta = [torch.stack(b) for b in beta] # [(epsilon, num_nets, dim_layer) for each layer]
+
+    # normalize to relative values
+    beta = [b / b.sum(dim=2, keepdim=True) for b in beta]
+    eigvals = [ev / ev.sum(dim=1, keepdim=True) for ev in eigvals]
+    
+    # reuse these a few times
+    statprms = lambda dim, method: dict(num_types=num_types, dim=dim, method=method)
+
+    # get mean and variance beta/eigenvalues for each layer for each network type
+    mean_acc, se_acc = compute_stats_by_type(accuracy, **statprms(1, 'var')) # (num_epsilon, num_types)
+    mean_beta, se_beta = named_transpose([compute_stats_by_type(b, **statprms(1, 'var')) for b in beta]) # [(epsilon, num_types, dim_layer) for each layer]
+    mean_evals, var_evals = named_transpose([compute_stats_by_type(ev, **statprms(0, 'var')) for ev in eigvals]) # [(num_types, dim_layer) for each layer]
+    
+    print("plotting adversarial success results...")
+    figdim = 3
+    alpha = 0.3
+    num_layers = len(mean_beta)
+    fig, ax = plt.subplots(1, 1, figsize=(figdim, figdim), layout='constrained')
+    for idx, label in enumerate(labels):
+        ax.plot(epsilons, mean_acc[:, idx], color=cmap(idx), label=label)
+        ax.set_xlabel('Epsilon')
+        ax.set_ylabel('Accuracy')
+        ax.set_title('Adversarial Attack Success')
+        ax.legend(loc='best')
+
+    exp.plot_ready('adversarial_success')
+
+
+    print("plotting adversarial structure...")
+    fig, ax = plt.subplots(1, num_layers, figsize=(num_layers*figdim, figdim), layout='constrained')
+    for layer in range(num_layers):
+        num_input = mean_beta[layer].size(2)
+        for idx, label in enumerate(labels):
+            ax[layer].plot(range(num_input), torch.nanmean(mean_beta[layer][:, idx], dim=0).detach(), color=cmap(idx), label=label)
+        ax[layer].set_xscale('log')
+        ax[layer].set_xlabel("Input Dimension")
+        ax[layer].set_ylabel("Average Component of Pertubation")
+        ax[layer].set_title(f"Layer {layer}")
+        if layer==num_layers-1:
+            ax[layer].legend(loc='best')
+            
+    exp.plot_ready('adversarial_structure')
+
+
+
 def plot_rf(rf, width, alignment=None, alignBounds=None, showRFs=None, figSize=5):
     if showRFs is not None: 
         rf = rf.reshape(rf.shape[0], -1)
