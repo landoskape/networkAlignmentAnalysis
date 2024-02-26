@@ -20,7 +20,9 @@ def plot_train_results(exp, train_results, test_results, prms):
     labels = [f"{prms['name']}={val}" for val in prms['vals']]
 
     print("getting statistics on run data...")
-    alignment = torch.stack([torch.mean(align, dim=2) for align in train_results['alignment']])
+    plot_alignment = 'alignment' in train_results
+    if plot_alignment:
+        alignment = torch.stack([torch.mean(align, dim=2) for align in train_results['alignment']])
     
     cmap = mpl.colormaps['tab10']
 
@@ -29,7 +31,8 @@ def plot_train_results(exp, train_results, test_results, prms):
     train_acc_mean, train_acc_se = compute_stats_by_type(train_results['accuracy'],
                                                             num_types=num_types, dim=1, method='se')
 
-    align_mean, align_se = compute_stats_by_type(alignment, num_types=num_types, dim=1, method='se')
+    if plot_alignment:
+        align_mean, align_se = compute_stats_by_type(alignment, num_types=num_types, dim=1, method='se')
 
     test_loss_mean, test_loss_se = compute_stats_by_type(torch.tensor(test_results['loss']),
                                                             num_types=num_types, dim=0, method='se')
@@ -99,25 +102,26 @@ def plot_train_results(exp, train_results, test_results, prms):
     exp.plot_ready('train_test_performance')
 
     # Make Alignment Figure
-    num_align_epochs = align_mean.size(2)
-    num_layers = align_mean.size(0)
-    fig, ax = plt.subplots(1, num_layers, figsize=(num_layers*figdim, figdim), layout='constrained', sharex=True)
-    for idx, label in enumerate(labels):
+    if plot_alignment:
+        num_align_epochs = align_mean.size(2)
+        num_layers = align_mean.size(0)
+        fig, ax = plt.subplots(1, num_layers, figsize=(num_layers*figdim, figdim), layout='constrained', sharex=True)
+        for idx, label in enumerate(labels):
+            for layer in range(num_layers):
+                cmn = align_mean[layer, idx] * 100
+                cse = align_se[layer, idx] * 100
+                ax[layer].plot(range(num_align_epochs), cmn, color=cmap(idx), label=label)
+                ax[layer].fill_between(range(num_align_epochs), cmn+cse, cmn-cse, color=(cmap(idx), alpha))
+
         for layer in range(num_layers):
-            cmn = align_mean[layer, idx] * 100
-            cse = align_se[layer, idx] * 100
-            ax[layer].plot(range(num_align_epochs), cmn, color=cmap(idx), label=label)
-            ax[layer].fill_between(range(num_align_epochs), cmn+cse, cmn-cse, color=(cmap(idx), alpha))
+            ax[layer].set_ylim(0, None)
+            ax[layer].set_xlabel('Training Epoch')
+            ax[layer].set_ylabel('Alignment (%)')
+            ax[layer].set_title(f"Layer {layer}")
 
-    for layer in range(num_layers):
-        ax[layer].set_ylim(0, None)
-        ax[layer].set_xlabel('Training Epoch')
-        ax[layer].set_ylabel('Alignment (%)')
-        ax[layer].set_title(f"Layer {layer}")
+        ax[0].legend(loc='lower right')
 
-    ax[0].legend(loc='lower right')
-
-    exp.plot_ready('train_alignment_by_layer')
+        exp.plot_ready('train_alignment_by_layer')
 
 
 def plot_dropout_results(exp, dropout_results, dropout_parameters, prms, dropout_type='nodes'):
