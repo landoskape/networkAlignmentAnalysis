@@ -112,7 +112,7 @@ def train(nets, optimizers, dataset, **parameters):
                 for net, transform in zip(nets, manual_transforms):
                     # just use this minibatch for computing eigenfeatures
                     inputs, _ = net._process_collect_activity(dataset,
-                                                              train_set=use_train,
+                                                              train_set=False,
                                                               with_updates=False,
                                                               use_training_mode=False)
                     _, eigenvalues, eigenvectors = net.measure_eigenfeatures(inputs, with_updates=False)
