@@ -67,7 +67,7 @@ def train(dataset, model, optimizer, epoch, device, train=True):
     print('Epoch:', epoch, 'Device:', device, 'First batch:', first_batch_time, 'Time per batch:', full_epoch_time)
 
 
-def demo(rank, world_size, distributed):
+def demo(rank, world_size, distributed, num_epochs=2):
     if distributed:
         print(f"Running basic DDP example on rank {rank}.")
         setup(rank, world_size)
@@ -96,10 +96,9 @@ def demo(rank, world_size, distributed):
     print(rank, "dataset created")
 
     t = time.time()
-    num_epochs = 2
     for epoch in range(num_epochs):
         print(rank, "starting epoch:", epoch)
-        #train(dataset, ddp_model, optimizer, epoch, device=get_device(rank), train=True)
+        train(dataset, ddp_model, optimizer, epoch, device=get_device(rank), train=True)
     
     print(f'total time (ddp={distributed}):', time.time() - t)
 
@@ -108,9 +107,9 @@ def demo(rank, world_size, distributed):
         cleanup()
 
 
-def run_demo(demo_fn, world_size):
+def run_demo(demo_fn, world_size, num_epochs):
     mp.spawn(demo_fn,
-             args=(world_size, True),
+             args=(world_size, True, num_epochs),
              nprocs=world_size,
              join=True)
 
@@ -120,13 +119,19 @@ if __name__ == "__main__":
     print(f'num cpus: {cpu_count()}')
     assert n_gpus >= 2, f"Requires at least 2 GPUs to run, but got {n_gpus}"
     world_size = n_gpus
+    num_epochs = 3
+
+    with profile(activities=[ProfilerActivity.CPU, ProfilerActivity.CUDA], record_shapes=True) as prof_setup:
+        with record_function("setup profiler (don't report this one)"):
+            demo(None, None, False, epochs=0)
+
     with profile(activities=[ProfilerActivity.CPU, ProfilerActivity.CUDA], record_shapes=True) as prof_ddp:
         with record_function("DDP Example"):
-            run_demo(demo, world_size)
+            run_demo(demo, world_size, num_epochs)
     
     with profile(activities=[ProfilerActivity.CPU, ProfilerActivity.CUDA], record_shapes=True) as prof_single:
         with record_function("Single GPU Example"):
-            demo(None, None, False)
+            demo(None, None, False, num_epochs=num_epochs)
     
     print('\n\n')
     print(prof_ddp.key_averages().table(sort_by="cpu_time_total", row_limit=10))
