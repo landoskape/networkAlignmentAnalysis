@@ -58,8 +58,8 @@ def train(dataset, model, optimizer, epoch, device, train=True):
         loss.backward()
         optimizer.step()
 
-        if i==5:
-            pass #break
+        if i==10:
+            break
 
     full_epoch_time = time.time() - start_time
     full_epoch_time -= first_batch_time
@@ -77,7 +77,7 @@ def demo(rank, world_size, distributed, num_epochs=2):
         get_device = lambda _: "cuda"
 
     model_name = 'AlexNet'
-    dataset_name = 'CIFAR100'
+    dataset_name = 'ImageNet'
 
     # create model and move it to GPU with id rank
     model = get_model(model_name, build=True, dataset=dataset_name).to(get_device(rank))
@@ -123,7 +123,7 @@ if __name__ == "__main__":
 
     with profile(activities=[ProfilerActivity.CPU, ProfilerActivity.CUDA], record_shapes=True) as prof_setup:
         with record_function("setup profiler (don't report this one)"):
-            demo(None, None, False, epochs=0)
+            demo(None, None, False, num_epochs=0)
 
     with profile(activities=[ProfilerActivity.CPU, ProfilerActivity.CUDA], record_shapes=True) as prof_ddp:
         with record_function("DDP Example"):
