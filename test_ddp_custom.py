@@ -88,12 +88,13 @@ def demo(rank, world_size, distributed):
         loader_prms = {'batch_size': 64}
     else:
         loader_prms = {}
+    loader_prms['num_workers']=16
 
     dataset = create_dataset(dataset_name, model, distributed=distributed, loader_parameters=loader_prms)
     print(rank, "dataset created")
 
     t = time.time()
-    num_epochs = 10
+    num_epochs = 2
     for epoch in range(num_epochs):
         print(rank, "starting epoch:", epoch)
         train(dataset, ddp_model, optimizer, epoch, device=get_device(rank), train=True)
