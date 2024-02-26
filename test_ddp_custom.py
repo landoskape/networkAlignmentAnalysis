@@ -85,7 +85,7 @@ def demo(rank, world_size, distributed):
     optimizer = optim.SGD(ddp_model.parameters(), lr=0.001)
     
     if dataset_name == 'ImageNet':
-        loader_prms = {'batch_size': 8}
+        loader_prms = {'batch_size': 64}
     else:
         loader_prms = {}
 
