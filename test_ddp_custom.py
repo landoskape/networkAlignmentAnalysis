@@ -24,8 +24,9 @@ def setup(rank, world_size):
 def cleanup():
     dist.destroy_process_group()
 
-def create_dataset(net, distributed=True):
-    return datasets.get_dataset('MNIST', build=True, distributed=distributed, transform_parameters=net)
+def create_dataset(name, net, distributed=True, loader_parameters={}):
+    return datasets.get_dataset(name, build=True, distributed=distributed, 
+                                transform_parameters=net, loader_parameters=loader_parameters)
 
 def train(dataset, model, optimizer, epoch, device, train=True):
     # switch to train mode
@@ -40,6 +41,7 @@ def train(dataset, model, optimizer, epoch, device, train=True):
     for i, (images, target) in enumerate(dataloader):
         if i==0:
             first_batch_time = time.time() - start_time
+            print('training now, rank:', device, 'first batch time:', first_batch_time)
 
         # move data to the same device as model
         images = images.to(device, non_blocking=True)
@@ -54,51 +56,60 @@ def train(dataset, model, optimizer, epoch, device, train=True):
         loss.backward()
         optimizer.step()
 
-    full_epoch_time = time.time() - start_time
-    print('Epoch:', epoch, 'Device:', device, 'First batch:', first_batch_time, 'All batches:', full_epoch_time)
+        if i==5:
+            pass #break
 
-def demo_basic(rank, world_size):
-    print(f"Running basic DDP example on rank {rank}.")
-    setup(rank, world_size)
+    full_epoch_time = time.time() - start_time
+    full_epoch_time -= first_batch_time
+    full_epoch_time /= i
+    print('Epoch:', epoch, 'Device:', device, 'First batch:', first_batch_time, 'Time per batch:', full_epoch_time)
+
+
+def demo(rank, world_size, distributed):
+    if distributed:
+        print(f"Running basic DDP example on rank {rank}.")
+        setup(rank, world_size)
+        get_device = lambda rank: f"cuda:{rank}"
+    else:
+        print("Running single GPU example.")
+        get_device = lambda _: "cuda"
+
+    model_name = 'AlexNet'
+    dataset_name = 'CIFAR100'
 
     # create model and move it to GPU with id rank
-    model = get_model('MLP', build=True, dataset='MNIST').to(rank)
-    ddp_model = DDP(model, device_ids=[rank])
+    model = get_model(model_name, build=True, dataset=dataset_name).to(get_device(rank))
+    print(rank, "model opened")
+    ddp_model = DDP(model, device_ids=[rank]) if distributed else model
+    print(rank, "ddp made")
     optimizer = optim.SGD(ddp_model.parameters(), lr=0.001)
+    
+    if dataset_name == 'ImageNet':
+        loader_prms = {'batch_size': 8}
+    else:
+        loader_prms = {}
 
-    dataset = create_dataset(model, distributed=True)
+    dataset = create_dataset(dataset_name, model, distributed=distributed, loader_parameters=loader_prms)
+    print(rank, "dataset created")
 
     t = time.time()
     num_epochs = 10
     for epoch in range(num_epochs):
-        train(dataset, ddp_model, optimizer, epoch, device=f"cuda:{rank}", train=True)
-    print('total with ddp:', time.time() - t)
+        print(rank, "starting epoch:", epoch)
+        train(dataset, ddp_model, optimizer, epoch, device=get_device(rank), train=True)
+    
+    print(f'total time (ddp={distributed}):', time.time() - t)
 
     # cleanup
-    cleanup()
+    if distributed:
+        cleanup()
 
-def demo_noddp():
-    print(f"Running basic example without DDP")
 
-    # create model and move it to GPU with id rank
-    model = get_model('MLP', build=True, dataset='MNIST').to('cuda')
-
-    optimizer = optim.SGD(model.parameters(), lr=0.001)
-
-    dataset = create_dataset(model, distributed=False)
-
-    t = time.time()
-    num_epochs = 10
-    for epoch in range(num_epochs):
-        train(dataset, model, optimizer, epoch, device="cuda", train=True)
-    print('total noddp:', time.time() - t)
-    
 def run_demo(demo_fn, world_size):
     mp.spawn(demo_fn,
-             args=(world_size,),
+             args=(world_size, True),
              nprocs=world_size,
              join=True)
-
 
 if __name__ == "__main__":
     n_gpus = torch.cuda.device_count()
@@ -106,14 +117,8 @@ if __name__ == "__main__":
     print(f'num cpus: {cpu_count()}')
     assert n_gpus >= 2, f"Requires at least 2 GPUs to run, but got {n_gpus}"
     world_size = n_gpus
-    run_demo(demo_basic, world_size)
-    demo_noddp()
-
-
-
-    # run_demo(demo_checkpoint, world_size)
-
-
+    run_demo(demo, world_size)
+    demo(None, None, False)
 
 
 

@@ -20,7 +20,7 @@ def default_loader_parameters(distributed, batch_size=1024, num_workers=2, shuff
     """
     default_parameters = dict(
         batch_size=batch_size,
-        num_workers=num_workers, # usually 2 workers is appropriate for swapping loading during batch processing
+        num_workers=1 if distributed else num_workers, # usually 2 workers is appropriate for swapping loading during batch processing
         shuffle=False if distributed else shuffle, # can't use shuffle=True if using DDP
         pin_memory=pin_memory,
         persistent_workers=persistent_workers,
