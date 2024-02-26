@@ -21,9 +21,9 @@ def train_networks(exp, nets, optimizers, dataset, **special_parameters):
 
     if exp.args.use_prev & os.path.isfile(exp.get_checkpoint_path()):
         nets, optimizers, results = load_checkpoints(nets,
-                                                        optimizers,
-                                                        exp.args.device,
-                                                        exp.get_checkpoint_path())
+                                                     optimizers,
+                                                     exp.args.device,
+                                                     exp.get_checkpoint_path())
         for net in nets:
             net.train()
 
