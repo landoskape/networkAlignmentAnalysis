@@ -88,7 +88,7 @@ def eigenvector_dropout(exp, nets, dataset, eigen_results, train_set=False):
     return evec_dropout_results, evec_dropout_parameters
 
 @test_nets
-def measure_adversarial_attacks(exp, nets, dataset, eigen_results, train_set=False, **parameters):
+def measure_adversarial_attacks(nets, dataset, exp, eigen_results, train_set=False, **parameters):
     """
     do adversarial attack and measure structure with regards to eigenfeatures
     """
@@ -99,10 +99,10 @@ def measure_adversarial_attacks(exp, nets, dataset, eigen_results, train_set=Fal
     # experiment parameters
     epsilons = parameters.get('epsilons')
     use_sign = parameters.get('use_sign')
-    fgsm_transform = parameters.get('fgsm_transform', None)
+    fgsm_transform = parameters.get('fgsm_transform', lambda x: x)
 
     # data from eigenvectors
-    eigenvectors = eigen_results['eigenvectors']
+    eigenvectors = eigen_results['eigvecs']
 
     num_eps = len(epsilons)
     num_nets = len(nets)
@@ -112,7 +112,7 @@ def measure_adversarial_attacks(exp, nets, dataset, eigen_results, train_set=Fal
              for _ in range(num_eps)]
 
     # dataloader
-    dataloader = dataset.train_loader if train else dataset.test_loader
+    dataloader = dataset.train_loader if train_set else dataset.test_loader
 
     for batch in tqdm(dataloader):
         input, labels = dataset.unwrap_batch(batch)
@@ -163,7 +163,7 @@ def measure_adversarial_attacks(exp, nets, dataset, eigen_results, train_set=Fal
             rms_betas = [torch.sqrt(torch.mean(db**2, dim=1)) for db in d_eps_betas]
 
             for ii, rbeta in enumerate(rms_betas):
-                betas[epsidx][ii] += rbeta
+                betas[epsidx][ii] += rbeta.detach()
 
             # Check for success
             final_preds = [torch.argmax(output, axis=1) for output in outputs]
@@ -181,7 +181,7 @@ def measure_adversarial_attacks(exp, nets, dataset, eigen_results, train_set=Fal
     accuracy = accuracy / float(len(dataloader.dataset))
 
     # Average across betas
-    betas = [[cb / float(len(dataloader.dataset)) for cb in beta] for beta in betas]
+    betas = transpose_list([[cb / float(len(dataloader.dataset)) for cb in beta] for beta in betas])
         
     # Return the accuracy and an adversarial example
-    return accuracy, betas, examples
+    return dict(accuracy=accuracy, betas=betas, examples=examples, epsilons=epsilons, use_sign=use_sign)
