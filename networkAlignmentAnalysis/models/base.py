@@ -1,4 +1,3 @@
-from math import prod
 from tqdm import tqdm
 from abc import ABC, abstractmethod 
 import torch
@@ -9,16 +8,23 @@ from warnings import warn
 from .layers import LAYER_REGISTRY, REGISTRY_REQUIREMENTS, check_metaparameters
 from ..utils import check_iterable
 from ..utils import get_maximum_strides
-from ..utils import batch_cov
-from ..utils import named_transpose
 from ..utils import weighted_average
 from ..utils import get_device
 from ..utils import remove_by_idx
 from ..utils import set_net_mode
 from ..utils import get_unfold_params
-from ..utils import sklearn_pca
 from ..utils import smart_pca
 
+class AttributeReference:
+    def __init__(self, parent):
+        self.parent = parent
+    
+    def __getattr__(self, name):
+        if hasattr(self.parent, name):
+            return getattr(self.parent, name)
+        else:
+            raise AttributeError(f"parent object (instance of {type(self.parent)}) has no attribute '{name}'")
+    
 class AlignmentNetwork(nn.Module, ABC):
     """
     This is the base class for a neural network used for alignment-related experiments. 
@@ -48,13 +54,15 @@ class AlignmentNetwork(nn.Module, ABC):
     1. Be a child of the nn.Module class with a forward method
     2. Have at most one "relevant" processing stage with weights for measuring alignment
     """
-    def __init__(self, **kwargs):
+    def __init__(self, reference=True, **kwargs):
         super().__init__() # register it as a nn.Module
         self.layers = nn.ModuleList() # a list of all modules in the forward pass
         self.metaparameters = [] # list of dictionaries containing metaparameters for each layer
         self.hidden = [] # list of tensors containing hidden activations
         self.ignore_flag = kwargs.pop('ignore_flag', False) # setting for whether to ignore flagged layers
         self.initialize(**kwargs) # initialize the architecture using child class method
+        if reference:
+            self.module = AttributeReference(self) # create reference to self in "model" attribute for compatibility with DDP
 
     @abstractmethod
     def initialize(self, **kwargs):
