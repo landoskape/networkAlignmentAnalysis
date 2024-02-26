@@ -108,8 +108,9 @@ def train(nets, optimizers, dataset, **parameters):
                         | {'batch': cidx})
 
         if manual_shape:
-            if epoch % manual_frequency == 0:
-                for net, transform in zip(nets, manual_transforms):
+            # only do it at the end of #=manual_frequency epochs (but not last)
+            if ((epoch+1) % manual_frequency == 0) and (epoch < parameters['num_epochs']-1):
+                for net, transform in tqdm(zip(nets, manual_transforms), desc='manual shaping', leave=False):
                     # just use this minibatch for computing eigenfeatures
                     inputs, _ = net._process_collect_activity(dataset,
                                                               train_set=False,
