@@ -34,7 +34,7 @@ class AdversarialShaping(Experiment):
         # -- depending on selection, something about the networks are varied throughout the experiment --
         parser.add_argument('--cutoffs', type=float, nargs='*', default=[1e-2, 1e-3, 1e-4, 0.0], help='what fraction of total variance to cut eigenvalues off at')
         parser.add_argument('--manual-frequency', type=int, default=5, help='how frequently (by epoch) to do manual shaping with eigenvectors')
-        
+
         # return parser
         return parser
     
@@ -93,7 +93,7 @@ class AdversarialShaping(Experiment):
         # train networks
         special_parameters = dict(
             manual_shape=True,
-            manual_frequency=5,
+            manual_frequency=self.args.manual_frequency,
             manual_transforms=[get_eval_transform_by_cutoff(co) for co in prms['cutoffs']],
             manual_layers = nets[0].get_alignment_layer_indices(),
         )
@@ -102,25 +102,14 @@ class AdversarialShaping(Experiment):
 
         # measure eigenfeatures
         eigen_results = processing.measure_eigenfeatures(self, nets, dataset, train_set=False)
-
-        # here, set up a processing method for doing adversarial attacks
-
-        # exp, nets, dataset, eigen_results, train_set=False, **parameters):
-        # """
-        # do adversarial attack and measure structure with regards to eigenfeatures
-        # """
-        # def get_beta(inputs, eigenvectors):
-        #     # get projection of input onto eigenvectors across layers
-        #     return [input.cpu() @ evec for input, evec in zip(inputs, eigenvectors)]
-
-        # # experiment parameters
-        # epsilons = parameters.get('epsilons')
-        # use_sign = parameters.get('use_sign')
-        # fgsm_transform = parameters.get('fgsm_transform', None)
-
-        # # data from eigenvectors
-        # eigenvectors = eigen_results['eigenvectors']
-
+        
+        # do adversarial attack experiment
+        adversarial_parameters = dict(
+            epsilons = torch.linspace(0, 1, 11),
+            use_sign = True,
+            fgsm_transform = lambda x: x,
+        )
+        adversarial_results = processing.measure_adversarial_attacks(nets, dataset, self, eigen_results, train_set=False, **adversarial_parameters)
 
         # make full results dictionary
         results = dict(
@@ -128,6 +117,7 @@ class AdversarialShaping(Experiment):
             train_results=train_results,
             test_results=test_results,
             eigen_results=eigen_results,
+            adversarial_results=adversarial_results,
         )    
 
         # return results and trained networks
@@ -139,4 +129,4 @@ class AdversarialShaping(Experiment):
         """
         plotting.plot_train_results(self, results['train_results'], results['test_results'], results['prms'])
         plotting.plot_eigenfeatures(self, results['eigen_results'], results['prms'])
-        
+        plotting.plot_adversarial_results(self, results['eigen_results'], results['adversarial_results'], results['prms'])
