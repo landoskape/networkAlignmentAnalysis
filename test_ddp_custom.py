@@ -9,6 +9,8 @@ import torch.optim as optim
 import torch.multiprocessing as mp
 from torch.nn.parallel import DistributedDataParallel as DDP
 
+from torch.profiler import profile, record_function, ProfilerActivity
+
 import time
 from multiprocessing import cpu_count
 from networkAlignmentAnalysis import datasets
@@ -97,7 +99,7 @@ def demo(rank, world_size, distributed):
     num_epochs = 2
     for epoch in range(num_epochs):
         print(rank, "starting epoch:", epoch)
-        train(dataset, ddp_model, optimizer, epoch, device=get_device(rank), train=True)
+        #train(dataset, ddp_model, optimizer, epoch, device=get_device(rank), train=True)
     
     print(f'total time (ddp={distributed}):', time.time() - t)
 
@@ -118,8 +120,20 @@ if __name__ == "__main__":
     print(f'num cpus: {cpu_count()}')
     assert n_gpus >= 2, f"Requires at least 2 GPUs to run, but got {n_gpus}"
     world_size = n_gpus
-    run_demo(demo, world_size)
-    demo(None, None, False)
+    with profile(activities=[ProfilerActivity.CPU, ProfilerActivity.CUDA], record_shapes=True) as prof_ddp:
+        with record_function("DDP Example"):
+            run_demo(demo, world_size)
+    
+    with profile(activities=[ProfilerActivity.CPU, ProfilerActivity.CUDA], record_shapes=True) as prof_single:
+        with record_function("Single GPU Example"):
+            demo(None, None, False)
+    
+    print('\n\n')
+    print(prof_ddp.key_averages().table(sort_by="cpu_time_total", row_limit=10))
+    print('\n\n')
+    print(prof_single.key_averages().table(sort_by="cpu_time_total", row_limit=10))
+
+    
 
 
 
