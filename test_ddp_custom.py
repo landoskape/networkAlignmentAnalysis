@@ -77,7 +77,7 @@ def demo(rank, world_size, distributed, num_epochs=2):
         get_device = lambda _: "cuda"
 
     model_name = 'AlexNet'
-    dataset_name = 'ImageNet'
+    dataset_name = 'CIFAR100'
 
     # create model and move it to GPU with id rank
     model = get_model(model_name, build=True, dataset=dataset_name).to(get_device(rank))
@@ -90,7 +90,7 @@ def demo(rank, world_size, distributed, num_epochs=2):
         loader_prms = {'batch_size': 64}
     else:
         loader_prms = {}
-    loader_prms['num_workers']=16
+    loader_prms['num_workers']=4
 
     dataset = create_dataset(dataset_name, model, distributed=distributed, loader_parameters=loader_prms)
     print(rank, "dataset created")
@@ -119,25 +119,27 @@ if __name__ == "__main__":
     print(f'num cpus: {cpu_count()}')
     assert n_gpus >= 2, f"Requires at least 2 GPUs to run, but got {n_gpus}"
     world_size = n_gpus
-    num_epochs = 3
+    num_epochs = 15
 
-    with profile(activities=[ProfilerActivity.CPU, ProfilerActivity.CUDA], record_shapes=True) as prof_setup:
-        with record_function("setup profiler (don't report this one)"):
-            demo(None, None, False, num_epochs=0)
+    #with profile(activities=[ProfilerActivity.CPU, ProfilerActivity.CUDA], record_shapes=True) as prof_setup:
+    #    with record_function("setup profiler (don't report this one)"):
+    #        demo(None, None, False, num_epochs=0)
 
-    with profile(activities=[ProfilerActivity.CPU, ProfilerActivity.CUDA], record_shapes=True) as prof_ddp:
-        with record_function("DDP Example"):
-            run_demo(demo, world_size, num_epochs)
+    #with profile(activities=[ProfilerActivity.CPU, ProfilerActivity.CUDA], record_shapes=True) as prof_ddp:
+    #    with record_function("DDP Example"):
+    #        run_demo(demo, world_size, num_epochs)
     
-    with profile(activities=[ProfilerActivity.CPU, ProfilerActivity.CUDA], record_shapes=True) as prof_single:
-        with record_function("Single GPU Example"):
-            demo(None, None, False, num_epochs=num_epochs)
+    #with profile(activities=[ProfilerActivity.CPU, ProfilerActivity.CUDA], record_shapes=True) as prof_single:
+    #    with record_function("Single GPU Example"):
+    #        demo(None, None, False, num_epochs=num_epochs)
     
-    print('\n\n')
-    print(prof_ddp.key_averages().table(sort_by="cpu_time_total", row_limit=10))
-    print('\n\n')
-    print(prof_single.key_averages().table(sort_by="cpu_time_total", row_limit=10))
-
+    #print('\n\n')
+    #print(prof_ddp.key_averages().table(sort_by="cpu_time_total", row_limit=10))
+    #print('\n\n')
+    #print(prof_single.key_averages().table(sort_by="cpu_time_total", row_limit=10))
+    
+    run_demo(demo, world_size, num_epochs)
+    demo(None, None, False, num_epochs=num_epochs)
     
 
 
