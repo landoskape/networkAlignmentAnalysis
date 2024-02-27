@@ -144,9 +144,9 @@ class DataSet(ABC):
         # store composed transformation
         self.transform = transforms.Compose(use_transforms)
 
-    def measure_loss(self, outputs, targets):
+    def measure_loss(self, outputs, targets, reduction='mean'):
         """simple method for measuring loss with stored loss function"""
-        return self.loss_function(outputs, targets)
+        return self.loss_function(outputs, targets, reduction=reduction)
     
     def measure_accuracy(self, outputs, targets, k=1, percentage=True):
         """
