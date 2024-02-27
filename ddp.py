@@ -12,40 +12,42 @@ from socket import gethostname
 from networkAlignmentAnalysis import datasets
 from networkAlignmentAnalysis.models.registry import get_model
 
-def train(args, model, device, train_loader, optimizer, epoch, rank):
+def train(args, model, device, dataset, optimizer, epoch, rank, train=True):
+    dataloader = dataset.train_loader if train else dataset.test_loader
     model.train()
-    for batch_idx, (data, target) in enumerate(train_loader):
-        data, target = data.to(device), target.to(device)
+    for batch_idx, batch in enumerate(dataloader):
+        data, target = dataset.unwrap_batch(batch, device=device)
         optimizer.zero_grad()
         output = model(data)
-        loss = F.nll_loss(output, target)
+        loss = dataset.measure_loss(output, target)
         loss.backward()
         optimizer.step()
         if batch_idx % args.log_interval == 0:
             if rank==0:
                 print('Train Epoch: {} [{}/{} ({:.0f}%)]\tLoss: {:.6f}'.format(
-                    epoch, batch_idx * len(data), len(train_loader.dataset),
-                    100. * batch_idx / len(train_loader), loss.item()))
+                    epoch, batch_idx * len(data), len(dataloader.dataset),
+                    100. * batch_idx / len(dataloader), loss.item()))
             if args.dry_run:
                 break
 
-def test(model, device, test_loader):
+def test(model, device, dataset, train=False):
+    dataloader = dataset.train_loader if train else dataset.test_loader
     model.eval()
     test_loss = 0
     correct = 0
     with torch.no_grad():
-        for data, target in test_loader:
-            data, target = data.to(device), target.to(device)
+        for batch in dataloader:
+            data, target = dataset.unwrap_batch(batch, device=device)
             output = model(data)
-            test_loss += F.nll_loss(output, target, reduction='sum').item()  # sum up batch loss
+            test_loss += dataset.measure_loss(output, target, reduction='sum').item()
             pred = output.argmax(dim=1, keepdim=True)  # get the index of the max log-probability
             correct += pred.eq(target.view_as(pred)).sum().item()
 
-    test_loss /= len(test_loader.dataset)
+    test_loss /= len(dataloader.dataset)
 
     print('\nTest set: Average loss: {:.4f}, Accuracy: {}/{} ({:.0f}%)\n'.format(
-        test_loss, correct, len(test_loader.dataset),
-        100. * correct / len(test_loader.dataset)))
+        test_loss, correct, len(dataloader.dataset),
+        100. * correct / len(dataloader.dataset)))
 
 def create_dataset(name, net, distributed=True, loader_parameters={}):
     return datasets.get_dataset(name, build=True, distributed=distributed, 
@@ -112,8 +114,8 @@ def main():
 
     scheduler = StepLR(optimizer, step_size=1, gamma=args.gamma)
     for epoch in range(1, args.epochs + 1):
-        train(args, ddp_model, local_rank, dataset.train_loader, optimizer, epoch, rank)
-        if rank == 0: test(ddp_model, local_rank, dataset.test_loader)
+        train(args, ddp_model, local_rank, dataset, optimizer, epoch, rank)
+        if rank == 0: test(ddp_model, local_rank, dataset)
         scheduler.step()
 
     if args.save_model and rank == 0:
