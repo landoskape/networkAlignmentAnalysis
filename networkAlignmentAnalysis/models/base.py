@@ -14,6 +14,7 @@ from ..utils import remove_by_idx
 from ..utils import set_net_mode
 from ..utils import get_unfold_params
 from ..utils import smart_pca
+from ..utils import alignment
 
 class AttributeReference:
     def __init__(self, parent):
@@ -295,7 +296,7 @@ class AlignmentNetwork(nn.Module, ABC):
             return weights
         return weights[idx]
     
-    def _preprocess_inputs(self, inputs_to_layers):
+    def _preprocess_inputs(self, inputs_to_layers, compress_convolutional=True):
         """
         helper method for processing inputs to layers as needed for certain alignment operations
 
@@ -304,7 +305,8 @@ class AlignmentNetwork(nn.Module, ABC):
         linear layer:
             will leave inputs to layers unchanged if input to a feedforward layer
         convolutional layer:
-            will unfold inputs to (batch, conv_weight_dim, num_strides)
+            if compress_convolutional=True, will unfold inputs to (batch * num_strides, conv_weight_dim)
+            otherwise, will unfold inputs to (batch, conv_weight_dim, num_strides)
         """
         # initialize new list of inputs to layers
         preprocessed = []
@@ -319,6 +321,8 @@ class AlignmentNetwork(nn.Module, ABC):
                 # if convolutional layer, unfold layer to (batch / conv_dim / num_strides)
                 layer_prms = get_unfold_params(layer)
                 unfolded_input = torch.nn.functional.unfold(input, layer.kernel_size, **layer_prms)
+                if compress_convolutional:
+                    unfolded_input = unfolded_input.transpose(1, 2).contiguous().view(-1, unfolded_input.size(1))
                 preprocessed.append(unfolded_input)
             else:
                 # if linear layer, no preprocessing should ever be required
@@ -338,11 +342,10 @@ class AlignmentNetwork(nn.Module, ABC):
     @torch.no_grad()
     def measure_alignment(self, x, precomputed=False, method='alignment'):
         # Pre-layer activations start with input (x) and ignore output
-        layer_inputs = self.get_layer_inputs(x, precomputed=precomputed)
-        alignment = []
-        for input, layer, metaprms in zip(layer_inputs, self.get_alignment_layers(), self.get_alignment_metaparameters()):
-            alignment.append(metaprms['alignment_method'](input, layer, method=method))
-        return alignment
+        inputs_to_layers = self.get_layer_inputs(x, precomputed=precomputed)
+        preprocessed = self._preprocess_inputs(inputs_to_layers, compress_convolutional=True)
+        weights = self.get_alignment_weights(flatten=True)
+        return [alignment(input, weight, method=method) for input, weight in zip(preprocessed, weights)]
 
     @torch.no_grad()
     def forward_targeted_dropout(self, x, idxs, layers):
@@ -544,7 +547,7 @@ class AlignmentNetwork(nn.Module, ABC):
         """
         # retrieve weights, reshape, and flatten inputs as required
         weights = self.get_alignment_weights(flatten=True)
-        inputs = self._preprocess_inputs(inputs)
+        inputs = self._preprocess_inputs(inputs, compress_convolutional=True)
 
         # measure eigenfeatures
         return self._measure_layer_eigenfeatures(inputs, weights, centered=centered, with_updates=with_updates)
@@ -583,10 +586,11 @@ class AlignmentNetwork(nn.Module, ABC):
 
         # measure the contribution of each eigenvector on the representation of each input
         beta_activity = []
-        inputs = self._preprocess_inputs(inputs)
+        inputs = self._preprocess_inputs(inputs, compress_convolutional=False)
         zipped = zip(inputs, eigenvectors, self.get_alignment_layers(), self.get_alignment_metaparameters())
         for input, evec, layer, metaprm in zipped:
             if metaprm['unfold']:
+                print('measure_class_eigenfeatures has not integrated new convolutional approach')
                 stride_var = torch.var(input, dim=1, keepdim=True)
                 projection = torch.matmul(evec.T, input)
                 projection = weighted_average(projection, stride_var, dim=2)
@@ -609,18 +613,34 @@ class AlignmentNetwork(nn.Module, ABC):
         """
         helper method for measuring eigenfeatures of each layer
 
-        input should be preprocessed weights (see _preprocess_inputs())
+        input should be preprocessed weights (see _preprocess_inputs()) using compress_convolutional=True
         weights should be preprocessed weights (in the case of convolutional layers, see get_alignment_weights())
-        
-        will measure for each stride of convolutional layers then average stride weighted by variance
         """
         beta, eigenvalues, eigenvectors = [], [], []
         
         # go through each layers inputs, weights, and metaparameters
-        zipped = enumerate(zip(inputs, weights, self.get_alignment_metaparameters()))
+        zipped = enumerate(zip(inputs, weights))
         iterate = tqdm(zipped) if with_updates else zipped
-        for ii, (input, weight, metaprm) in iterate:
-            
+        for ii, (input, weight) in iterate:
+            """
+            #ATL 240227: this used to be divided into linear vs. convolutional
+            but now _preprocess_inputs will fold stride dimension in with batch dimension
+            so it will behave the same way as a linear layer
+            """
+            # measure evals and evecs across input
+            w, v = smart_pca(input.T, centered=centered)
+
+            # Measure abs value of dot product of weights on eigenvectors for each layer
+            weight = weight / torch.norm(weight, dim=1, keepdim=True)
+            beta.append(weight.cpu() @ v)
+
+            # Append eigenvalues and eigenvectors to output
+            eigenvalues.append(w)
+            eigenvectors.append(v)
+
+
+            """
+            #ATL 240227 - obsolete code now that stride dimension is being folded into batch dimension
             # if a convolutional layer, then:
             if metaprm['unfold']:
                 # measure variance across dimensions (the actual variance within each stride)
@@ -644,19 +664,7 @@ class AlignmentNetwork(nn.Module, ABC):
                 beta.append(b_weighted_by_var)
                 eigenvalues.append(w_weighted_by_var)
                 eigenvectors.append(v_weighted_by_var)
-
-            # if a linear layer, then:
-            else:
-                # measure evals and evecs across input
-                w, v = smart_pca(input.T, centered=centered)
-
-                # Measure abs value of dot product of weights on eigenvectors for each layer
-                weight = weight / torch.norm(weight, dim=1, keepdim=True)
-                beta.append(weight.cpu() @ v)
-
-                # Append eigenvalues and eigenvectors to output
-                eigenvalues.append(w)
-                eigenvectors.append(v)
+            """                
 
         return beta, eigenvalues, eigenvectors
     
