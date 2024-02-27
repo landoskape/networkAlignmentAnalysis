@@ -5,7 +5,7 @@
 #SBATCH --cpus-per-task=16        # cpu-cores per task (>1 if multi-threaded tasks)
 #SBATCH --mem=512G                # total memory per node (4 GB per cpu-core is default)
 #SBATCH --gres=gpu:4             # number of allocated gpus per node
-#SBATCH --time=03:00:00          # total run time limit (HH:MM:SS)
+#SBATCH --time=01:00:00          # total run time limit (HH:MM:SS)
 #SBATCH --mail-type=begin        # send email when job begins
 #SBATCH --mail-type=end          # send email when job ends
 
@@ -26,7 +26,7 @@ start_time=$(date +%s)
 
 # (nvidia-smi --query-gpu=utilization.gpu --format=csv --loop=1 --filename=gpu_utilization.log)
 
-srun python ddp.py --epochs=2 --batch-size 64 --log-interval 1
+srun python ddp.py --epochs=10
 
 end_time=$(date +%s)
 
