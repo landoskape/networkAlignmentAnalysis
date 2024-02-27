@@ -8,6 +8,9 @@ slurm*
 # WANDB
 wandb/
 
+# general ignore
+ignore/
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
