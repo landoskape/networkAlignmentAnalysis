@@ -14,6 +14,12 @@ from networkAlignmentAnalysis.models.registry import get_model
 
 def train(args, model, device, dataset, optimizer, epoch, rank, train=True):
     dataloader = dataset.train_loader if train else dataset.test_loader
+    if dataset.distributed:
+        if train:
+            dataset.train_sampler.set_epoch(epoch)
+        else:
+            dataset.test_sampler.set_epoch(epoch)
+    
     model.train()
     for batch_idx, batch in enumerate(dataloader):
         data, target = dataset.unwrap_batch(batch, device=device)
@@ -24,9 +30,7 @@ def train(args, model, device, dataset, optimizer, epoch, rank, train=True):
         optimizer.step()
         if batch_idx % args.log_interval == 0:
             if rank==0:
-                print('Train Epoch: {} [{}/{} ({:.0f}%)]\tLoss: {:.6f}'.format(
-                    epoch, batch_idx * len(data), len(dataloader.dataset),
-                    100. * batch_idx / len(dataloader), loss.item()))
+                print(f"Train Epoch: {epoch} [{batch_idx}/{len(dataloader)} ({100.*batch_idx/len(dataloader):.0f}%)] \t Loss: {loss.item():.6f}")
             if args.dry_run:
                 break
 
