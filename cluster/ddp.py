@@ -20,9 +20,11 @@ def train(args, model, device, dataset, optimizer, epoch, rank, train=True):
         else:
             dataset.test_sampler.set_epoch(epoch)
     
+    print(f"From train rank {rank}- dataset length={len(dataloader.dataset)}, dataloader length={len(dataloader)}")
     model.train()
     for batch_idx, batch in enumerate(dataloader):
         data, target = dataset.unwrap_batch(batch, device=device)
+        print(f"--- in minibatch train rank {rank}- batch size={data.shape}")
         optimizer.zero_grad()
         output = model(data)
         loss = dataset.measure_loss(output, target)
@@ -39,6 +41,7 @@ def test(model, device, dataset, train=False):
     model.eval()
     test_loss = 0
     correct = 0
+    attempts = 0
     with torch.no_grad():
         for batch in dataloader:
             data, target = dataset.unwrap_batch(batch, device=device)
@@ -46,12 +49,13 @@ def test(model, device, dataset, train=False):
             test_loss += dataset.measure_loss(output, target, reduction='sum').item()
             pred = output.argmax(dim=1, keepdim=True)  # get the index of the max log-probability
             correct += pred.eq(target.view_as(pred)).sum().item()
+            attempts += data.size(0)
 
     test_loss /= len(dataloader.dataset)
 
     print('\nTest set: Average loss: {:.4f}, Accuracy: {}/{} ({:.0f}%)\n'.format(
-        test_loss, correct, len(dataloader.dataset),
-        100. * correct / len(dataloader.dataset)))
+        test_loss, correct, attempts,
+        100. * correct / attempts))
 
 def create_dataset(name, net, distributed=True, loader_parameters={}):
     return datasets.get_dataset(name, build=True, distributed=distributed, 
@@ -70,8 +74,8 @@ def main():
                         help='number of epochs to train (default: 14)')
     parser.add_argument('--lr', type=float, default=1.0, metavar='LR',
                         help='learning rate (default: 1.0)')
-    parser.add_argument('--gamma', type=float, default=0.7, metavar='M',
-                        help='Learning rate step gamma (default: 0.7)')
+    parser.add_argument('--gamma', type=float, default=0.9, metavar='M',
+                        help='Learning rate step gamma (default: 0.9)')
     parser.add_argument('--no-cuda', action='store_true', default=False,
                         help='disables CUDA training')
     parser.add_argument('--dry-run', action='store_true', default=False,
