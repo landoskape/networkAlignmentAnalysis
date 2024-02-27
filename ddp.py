@@ -103,8 +103,8 @@ def main():
     torch.cuda.set_device(local_rank)
     print(f"host: {gethostname()}, rank: {rank}, local_rank: {local_rank}")
 
-    model_name = 'MLP'
-    dataset_name = 'MNIST'
+    model_name = 'AlexNet'
+    dataset_name = 'ImageNet'
     net = get_model(model_name, build=True, dataset=dataset_name)
     dataset = create_dataset(dataset_name, net, distributed=world_size>1, loader_parameters=loader_parameters)
 
