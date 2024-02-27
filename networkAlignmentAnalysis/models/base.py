@@ -638,7 +638,6 @@ class AlignmentNetwork(nn.Module, ABC):
             eigenvalues.append(w)
             eigenvectors.append(v)
 
-
             """
             #ATL 240227 - obsolete code now that stride dimension is being folded into batch dimension
             # if a convolutional layer, then:

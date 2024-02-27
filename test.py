@@ -40,16 +40,12 @@ if __name__ == '__main__':
                           dataset_parameters=dict(download=True),
                           device=DEVICE)
 
-    batch = next(iter(dataset.test_loader))
-    images, labels = dataset.unwrap_batch(batch)
-    net.measure_alignment(images, precomputed=False)
+    optim = torch.optim.Adam(net.parameters(), lr=1e-3)
 
-    # optim = torch.optim.Adam(net.parameters(), lr=1e-3)
+    alignment = False if args.no_alignment else True
+    results = train.train([net], [optim], dataset, train_set=False, num_epochs=1, alignment=True)
 
-    # alignment = True if not args.no_alignment else False
-    # results = train.train([net], [optim], dataset, train_set=True, num_epochs=50, alignment=alignment)
-
-    # inputs, labels = net._process_collect_activity(dataset, train_set=False, with_updates=True, use_training_mode=True)
-    # betas, eigenvalues, eigenvectors = net.measure_eigenfeatures(inputs)
+    inputs, labels = net._process_collect_activity(dataset, train_set=False, with_updates=True, use_training_mode=True)
+    betas, eigenvalues, eigenvectors = net.measure_eigenfeatures(inputs)
     # net.shape_eigenfeatures(net.get_alignment_layer_indices(), eigenvalues, eigenvectors, lambda x: x)
 
