@@ -11,7 +11,7 @@ from argparse import ArgumentParser
 
 def get_args(args=None):
     parser = ArgumentParser(description='test alignment code')
-    parser.add_argument('--network', type=str, default='MLP')
+    parser.add_argument('--network', type=str, default='CNN2P2')
     parser.add_argument('--dataset', type=str, default='MNIST')
     parser.add_argument('--device', type=str, default=None)
     parser.add_argument('--no-alignment', default=False, action='store_true')
@@ -40,10 +40,14 @@ if __name__ == '__main__':
                           dataset_parameters=dict(download=True),
                           device=DEVICE)
 
-    optim = torch.optim.Adam(net.parameters(), lr=1e-3)
+    batch = next(iter(dataset.test_loader))
+    images, labels = dataset.unwrap_batch(batch)
+    net.measure_alignment(images, precomputed=False)
 
-    alignment = True if not args.no_alignment else False
-    results = train.train([net], [optim], dataset, train_set=True, num_epochs=50, alignment=alignment)
+    # optim = torch.optim.Adam(net.parameters(), lr=1e-3)
+
+    # alignment = True if not args.no_alignment else False
+    # results = train.train([net], [optim], dataset, train_set=True, num_epochs=50, alignment=alignment)
 
     # inputs, labels = net._process_collect_activity(dataset, train_set=False, with_updates=True, use_training_mode=True)
     # betas, eigenvalues, eigenvectors = net.measure_eigenfeatures(inputs)

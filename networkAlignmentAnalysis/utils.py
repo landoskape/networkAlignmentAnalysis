@@ -369,15 +369,13 @@ def alignment_convolutional(activity, layer, method='alignment'):
     layer_prms = get_unfold_params(layer)
     # unfold data so it's in shape (batch, kernel_dim, num_strides)
     unfolded_input = torch.nn.functional.unfold(activity, layer.kernel_size, **layer_prms)
-    # get average variance of each stride
-    variance_stride = torch.mean(torch.var(unfolded_input, dim=1), dim=0)
+    # now fold stride dimension into batch dimension to measure alignment across all batches and strides together
+    all_input = unfolded_input.transpose(1, 2).contiguous().view(-1, unfolded_input.size(1))
     # get weights of layer
     weight = layer.weight.data
-    # get alignment for each channel on each stride
-    align_stride = torch.stack([alignment(unfolded_input[:, :, i], weight.view(weight.size(0), -1), method=method) for i in range(unfolded_input.size(2))], dim=1)
-    # return weighted average, weighting by variance on each stride (ignoring nans in case any strides have no variance)
-    return weighted_average(align_stride, variance_stride.view(1, -1), 1, ignore_nan=True)
-
+    # return alignment 
+    return alignment(all_input, weight.view(weight.size(0), -1), method=method)
+    
 def get_maximum_strides(h_input, w_input, layer):
     h_max = int(np.floor((h_input + 2*layer.padding[0] - layer.dilation[0]*(layer.kernel_size[0] - 1) -1)/layer.stride[0] + 1))
     w_max = int(np.floor((w_input + 2*layer.padding[1] - layer.dilation[1]*(layer.kernel_size[1] - 1) -1)/layer.stride[1] + 1))
