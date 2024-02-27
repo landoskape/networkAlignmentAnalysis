@@ -5,9 +5,13 @@ import torch.optim as optim
 from torch.optim.lr_scheduler import StepLR
 
 import os
+import sys
 import torch.distributed as dist
 from torch.nn.parallel import DistributedDataParallel as DDP
 from socket import gethostname
+
+mainPath = os.path.dirname(os.path.abspath(__file__)) + "/.."
+sys.path.append(mainPath)
 
 from networkAlignmentAnalysis import datasets
 from networkAlignmentAnalysis.models.registry import get_model
@@ -112,7 +116,7 @@ def main():
     print(f"host: {gethostname()}, rank: {rank}, local_rank: {local_rank}")
 
     model_name = 'AlexNet'
-    dataset_name = 'ImageNet'
+    dataset_name = 'MNIST'
     net = get_model(model_name, build=True, dataset=dataset_name)
     dataset = create_dataset(dataset_name, net, distributed=world_size>1, loader_parameters=loader_parameters)
 
