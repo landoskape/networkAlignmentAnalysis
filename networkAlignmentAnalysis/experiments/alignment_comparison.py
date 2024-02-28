@@ -2,6 +2,8 @@ import torch
 from .experiment import Experiment 
 from ..models.registry import get_model, get_model_parameters
 from . import arglib
+from .. import processing
+from .. import plotting
 
 class AlignmentComparison(Experiment):
     def get_basename(self):
@@ -115,16 +117,16 @@ class AlignmentComparison(Experiment):
         dataset = self.prepare_dataset(nets[0])
 
         # train networks
-        train_results, test_results = self.train_networks(nets, optimizers, dataset)
+        train_results, test_results = processing.train_networks(self, nets, optimizers, dataset)
 
         # do targeted dropout experiment
-        dropout_results, dropout_parameters = self.progressive_dropout_experiment(nets, dataset, alignment=test_results['alignment'], train_set=False)
+        dropout_results, dropout_parameters = processing.progressive_dropout_experiment(self, nets, dataset, alignment=test_results['alignment'], train_set=False)
         
         # measure eigenfeatures
-        eigen_results = self.measure_eigenfeatures(nets, dataset, train_set=False)
+        eigen_results = processing.measure_eigenfeatures(self, nets, dataset, train_set=False)
 
         # do targeted dropout experiment
-        evec_dropout_results, evec_dropout_parameters = self.eigenvector_dropout(nets, dataset, eigen_results, train_set=False)
+        evec_dropout_results, evec_dropout_parameters = processing.eigenvector_dropout(self, nets, dataset, eigen_results, train_set=False)
         
         # make full results dictionary
         results = dict(
@@ -145,7 +147,7 @@ class AlignmentComparison(Experiment):
         """
         main plotting loop
         """
-        self.plot_train_results(results['train_results'], results['test_results'], results['prms'])
-        self.plot_dropout_results(results['dropout_results'], results['dropout_parameters'], results['prms'], dropout_type='nodes')
-        self.plot_eigenfeatures(results['eigen_results'], results['prms'])
-        self.plot_dropout_results(results['evec_dropout_results'], results['evec_dropout_parameters'], results['prms'], dropout_type='eigenvectors')
+        plotting.plot_train_results(self, results['train_results'], results['test_results'], results['prms'])
+        plotting.plot_dropout_results(self, results['dropout_results'], results['dropout_parameters'], results['prms'], dropout_type='nodes')
+        plotting.plot_eigenfeatures(self, results['eigen_results'], results['prms'])
+        plotting.plot_dropout_results(self, results['evec_dropout_results'], results['evec_dropout_parameters'], results['prms'], dropout_type='eigenvectors')

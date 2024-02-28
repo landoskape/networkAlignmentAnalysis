@@ -5,6 +5,7 @@ import numpy as np
 import torch
 import torchvision
 from torch import nn
+from torch.utils.data.distributed import DistributedSampler
 from torchvision.transforms import v2 as transforms
 
 from . import files
@@ -12,7 +13,7 @@ from .models.base import AlignmentNetwork
 
 REQUIRED_PROPERTIES = ['dataset_path', 'dataset_constructor', 'loss_function']
 
-def default_loader_parameters(batch_size=1024, num_workers=2, shuffle=True, pin_memory=True, persistent_workers=True):
+def default_loader_parameters(distributed, batch_size=1024, num_workers=2, shuffle=True, pin_memory=True, persistent_workers=True):
     """
     contains the default dataloader parameters with the option of updating them
     using key word argument
@@ -20,20 +21,21 @@ def default_loader_parameters(batch_size=1024, num_workers=2, shuffle=True, pin_
     default_parameters = dict(
         batch_size=batch_size,
         num_workers=num_workers, # usually 2 workers is appropriate for swapping loading during batch processing
-        shuffle=shuffle,
+        shuffle=False if distributed else shuffle, # can't use shuffle=True if using DDP
         pin_memory=pin_memory,
         persistent_workers=persistent_workers,
     )
     return default_parameters
 
 class DataSet(ABC):
-    def __init__(self, device=None, transform_parameters={}, loader_parameters={}):
+    def __init__(self, device=None, distributed=False, dataset_parameters={}, transform_parameters={}, loader_parameters={}):
         # set properties of dataset and check that all required properties are defined
         self.set_properties() 
         self.check_properties() 
 
         # define device for dataloading
         self.device = device if device is not None else ('cuda' if torch.cuda.is_available() else 'cpu')
+        self.distributed = distributed
 
         # define extra transform (should be a callable method or None) for any transformations that 
         # can't go in the torchvision.transforms.Compose(...), hopefully this won't be needed later 
@@ -45,10 +47,11 @@ class DataSet(ABC):
         self.make_transform(**transform_parameters) 
 
         # define the dataloader parameters
-        self.dataloader_parameters = default_loader_parameters(**loader_parameters) # get dataloader parameters
+        self.dataloader_parameters = default_loader_parameters(distributed, **loader_parameters) # get dataloader parameters
         
         # load the dataset and create the dataloaders
-        self.load_dataset() 
+        self.dataset_parameters = dataset_parameters
+        self.load_dataset(**dataset_parameters) 
 
     def check_properties(self):
         """
@@ -79,21 +82,9 @@ class DataSet(ABC):
         loss_function: callable method, defines how to evaluate the loss of the output and target
         """
         pass
-
-    @abstractmethod
-    def make_transform(self, **transform_parameters):
-        """
-        defines the relevant transforms in the ETL pipeline for the dataset
-        
-        requires kwargs "transform_parameters" that are provided at initialization, 
-        stored by the object, and automatically passed into this method. It is
-        structured like this because I've unpacked the kwargs in the make_transform
-        methods to have clear requirements and provide defaults
-        """
-        pass
     
     @abstractmethod
-    def dataset_kwargs(self, train=True):
+    def dataset_kwargs(self, train=True, **kwargs):
         """
         keyword arguments passed into the torch dataset constructor
 
@@ -106,12 +97,14 @@ class DataSet(ABC):
         """
         pass
 
-    def load_dataset(self):
+    def load_dataset(self, **kwargs):
         """load dataset using the established path and parameters"""
-        self.train_dataset = self.dataset_constructor(**self.dataset_kwargs(train=True))
-        self.test_dataset = self.dataset_constructor(**self.dataset_kwargs(train=False))
-        self.train_loader = torch.utils.data.DataLoader(self.train_dataset, **self.dataloader_parameters)
-        self.test_loader = torch.utils.data.DataLoader(self.test_dataset, **self.dataloader_parameters)
+        self.train_dataset = self.dataset_constructor(**self.dataset_kwargs(train=True, **kwargs))
+        self.test_dataset = self.dataset_constructor(**self.dataset_kwargs(train=False, **kwargs))
+        self.train_sampler = DistributedSampler(self.train_dataset) if self.distributed else None
+        self.test_sampler = DistributedSampler(self.test_dataset) if self.distributed else None
+        self.train_loader = torch.utils.data.DataLoader(self.train_dataset, sampler=self.train_sampler, **self.dataloader_parameters)
+        self.test_loader = torch.utils.data.DataLoader(self.test_dataset, sampler=self.test_sampler, **self.dataloader_parameters)
 
     def unwrap_batch(self, batch, device=None):
         """simple method for unwrapping batch for simple training loops"""
@@ -121,9 +114,46 @@ class DataSet(ABC):
         inputs, targets = inputs.to(device), targets.to(device)
         return inputs, targets
     
-    def measure_loss(self, outputs, targets):
+    def make_transform(self, center_crop=None, resize=None, flatten=False, out_channels=None):
+        """
+        create transform for dataloader
+        resize is the new (H, W) shape of the image for the transforms.Resize transform (or None)
+        flatten is a boolean indicating whether to flatten the image, (i.e. for a linear input layer)
+        """
+        # default transforms
+        use_transforms = [
+            # Convert PIL Image to PyTorch Tensor
+            transforms.ToImage(),
+            transforms.ToDtype(torch.float32, scale=True),
+        ]
+
+        if center_crop:
+            use_transforms.append(transforms.CenterCrop(center_crop))
+
+        # Normalize inputs to canonical distribution
+        use_transforms.append(transforms.Normalize((self.dist_params['mean']), (self.dist_params['std'])))
+        
+        # extra transforms depending on network
+        if resize:
+            use_transforms.append(transforms.Resize(resize, antialias=True))
+        if out_channels:
+            use_transforms.append(transforms.Grayscale(num_output_channels=out_channels))
+        if flatten:
+            use_transforms.append(transforms.Lambda(torch.flatten))
+        
+        # store composed transformation
+        self.transform = transforms.Compose(use_transforms)
+
+    def measure_loss(self, outputs, targets, reduction=None):
         """simple method for measuring loss with stored loss function"""
-        return self.loss_function(outputs, targets)
+        if reduction is None:
+            return self.loss_function(outputs, targets)
+        
+        standard_reduction = self.loss_function.reduction
+        self.loss_function.reduction = reduction
+        loss = self.loss_function(outputs, targets)
+        self.loss_function.reduction = standard_reduction
+        return loss
     
     def measure_accuracy(self, outputs, targets, k=1, percentage=True):
         """
@@ -146,42 +176,17 @@ class MNIST(DataSet):
         self.dataset_path = files.dataset_path("MNIST")
         self.dataset_constructor = torchvision.datasets.MNIST
         self.loss_function = nn.CrossEntropyLoss()
-        self.dist_params = dict(mean=0.1307, std=0.3081)
+        self.dist_params = dict(mean=[0.1307], std=[0.3081])
 
-    def make_transform(self, resize=None, flatten=False):
-        """
-        create transform for dataloader
-        resize is the new (H, W) shape of the image for the transforms.Resize transform (or None)
-        flatten is a boolean indicating whether to flatten the image, (i.e. for a linear input layer)
-        """
-        # default transforms
-        use_transforms = [
-            # Convert PIL Image to PyTorch Tensor
-            transforms.ToImage(),
-            transforms.ToDtype(torch.float32, scale=True),
-            # Normalize inputs to canonical distribution
-            transforms.Normalize((self.dist_params['mean'],), (self.dist_params['std'],)), 
-            ]
-        
-        # extra transforms depending on network
-        if resize:
-            use_transforms.append(transforms.Resize(resize))
-        if flatten:
-            use_transforms.append(transforms.Lambda(torch.flatten))
-
-        # store composed transformation
-        self.transform = transforms.Compose(use_transforms)
-
-    def dataset_kwargs(self, train=True):
+    def dataset_kwargs(self, train=True, download=False):
         """set data constructor kwargs for MNIST"""
         kwargs = dict(
             train=train,
             root=self.dataset_path,
-            download=False,
+            download=download,
             transform=self.transform,
         )
         return kwargs
-    
 
 class CIFAR10(DataSet):
     def set_properties(self):
@@ -191,36 +196,12 @@ class CIFAR10(DataSet):
         self.loss_function = nn.CrossEntropyLoss()
         self.dist_params = dict(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5])
 
-    def make_transform(self, resize=None, flatten=False):
-        """
-        create transform for dataloader
-        resize is the new (H, W) shape of the image for the transforms.Resize transform (or None)
-        flatten is a boolean indicating whether to flatten the image, (i.e. for a linear input layer)
-        """
-        # default transforms
-        use_transforms = [
-            # Convert PIL Image to PyTorch Tensor
-            transforms.ToImage(),
-            transforms.ToDtype(torch.float32, scale=True),
-            # Normalize inputs to canonical distribution
-            transforms.Normalize((self.dist_params['mean']), (self.dist_params['std'])), 
-            ]
-        
-        # extra transforms depending on network
-        if resize:
-            use_transforms.append(transforms.Resize(resize))
-        if flatten:
-            use_transforms.append(transforms.Lambda(torch.flatten))
-
-        # store composed transformation
-        self.transform = transforms.Compose(use_transforms)
-
-    def dataset_kwargs(self, train=True):
+    def dataset_kwargs(self, train=True, download=False):
         """set data constructor kwargs for CIFAR10"""
         kwargs = dict(
             train=train,
             root=self.dataset_path,
-            download=False,
+            download=download,
             transform=self.transform,
         )
         return kwargs
@@ -250,32 +231,6 @@ class ImageNet2012(DataSet):
                                 std=[0.229, 0.224, 0.225])
         self.center_crop = 224
 
-    def make_transform(self, resize=256, flatten=False):
-        """
-        Create transform for dataloader.
-        resize is the new (H, W) shape of the image for the transforms. Resize
-        transform (or None).
-        flatten is a boolean indicating whether to flatten the image, (i.e.
-        for a linear input layer)
-        """
-        # default transforms
-        use_transforms = [
-            transforms.ToImage(),
-            transforms.ToDtype(torch.float32, scale=True),
-            transforms.CenterCrop(self.center_crop),
-            transforms.Normalize((self.dist_params['mean']),
-                                 (self.dist_params['std'])),
-        ]
-
-        # extra transforms depending on network
-        if resize:
-            use_transforms.append(transforms.Resize(resize))
-        if flatten:
-            use_transforms.append(transforms.Lambda(torch.flatten))
-
-        # store composed transformation
-        self.transform = transforms.Compose(use_transforms)
-
     def dataset_kwargs(self, train=True):
         """set data constructor kwargs for ImageNet2012"""
         kwargs = dict(
@@ -294,7 +249,7 @@ DATASET_REGISTRY = {
     'ImageNet': ImageNet2012,
 }
 
-def get_dataset(dataset_name, build=False, transform_parameters={}, loader_parameters={}, **kwargs):
+def get_dataset(dataset_name, build=False, dataset_parameters={}, transform_parameters={}, loader_parameters={}, **kwargs):
     """
     lookup dataset constructor from dataset registry by name
 
@@ -313,7 +268,28 @@ def get_dataset(dataset_name, build=False, transform_parameters={}, loader_param
                 raise TypeError("transform_parameters must be a dictionary or an AlignmentNetwork")
         
         # Build the dataset
-        return dataset(transform_parameters=transform_parameters, loader_parameters=loader_parameters, **kwargs)
+        return dataset(dataset_parameters=dataset_parameters,
+                       transform_parameters=transform_parameters, 
+                       loader_parameters=loader_parameters, 
+                       **kwargs)
     
     # Otherwise return the constructor
     return dataset
+
+
+if __name__ == "__main__":
+    """simple program for downloading a dataset"""
+
+    from argparse import ArgumentParser
+    def get_args(args=None):
+        parser = ArgumentParser(description='simple program for downloading a dataset to the local file location')
+        parser.add_argument('--dataset', type=str, default='MNIST')
+        return parser.parse_args(args=args)
+    
+    args = get_args()
+
+    dataset = get_dataset(
+        args.dataset, 
+        build=True,  
+        dataset_parameters=dict(download=True)
+    )

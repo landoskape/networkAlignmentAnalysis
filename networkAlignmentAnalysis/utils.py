@@ -120,6 +120,21 @@ def remove_by_idx(input, idx, dim):
     idx_keep = [i for i in range(input.size(dim)) if i not in idx]
     return torch.index_select(input, dim, torch.tensor(idx_keep).to(input.device))
 
+def get_eval_transform_by_cutoff(cutoff):
+    """
+    get method for transforming eigenvalues into a binary keep fraction
+    
+    will scale each eigenvector by 1 or 0 depending on whether that eigenvalue
+    explains more than **cutoff** fraction of the variance
+
+    returns a callable method
+    """
+    def eval_transform(evals):
+        assert torch.all(evals >= 0), "found negative eigenvalues, doesn't work for 'cutoff' eval_transform"
+        evals = evals / torch.sum(evals)
+        return 1.0*(evals > cutoff)
+    return eval_transform
+
 def smartcorr(input):
     """
     Performs torch corrcoef on the input data but sets each pair-wise correlation coefficent
@@ -216,7 +231,6 @@ def smart_pca(input, centered=True, use_rank=True, correction=True):
 
     # return eigenvalues and eigenvectors
     return w, v
-
 
 def eigendecomposition(C, use_rank=True):
     """
@@ -341,11 +355,9 @@ def alignment(input, weight, method='alignment'):
     # proportion of variance explained by a projection of the input onto each weight
     return rq/torch.trace(cc)
 
-
 def alignment_linear(activity, layer, method='alignment'):
     """wrapper for alignment of linear layer, kwargs for compatibility"""
     return alignment(activity, layer.weight.data, method=method)
-
 
 def alignment_convolutional(activity, layer, method='alignment'):
     """
@@ -357,15 +369,13 @@ def alignment_convolutional(activity, layer, method='alignment'):
     layer_prms = get_unfold_params(layer)
     # unfold data so it's in shape (batch, kernel_dim, num_strides)
     unfolded_input = torch.nn.functional.unfold(activity, layer.kernel_size, **layer_prms)
-    # get average variance of each stride
-    variance_stride = torch.mean(torch.var(unfolded_input, dim=1), dim=0)
+    # now fold stride dimension into batch dimension to measure alignment across all batches and strides together
+    all_input = unfolded_input.transpose(1, 2).contiguous().view(-1, unfolded_input.size(1))
     # get weights of layer
     weight = layer.weight.data
-    # get alignment for each channel on each stride
-    align_stride = torch.stack([alignment(unfolded_input[:, :, i], weight.view(weight.size(0), -1), method=method) for i in range(unfolded_input.size(2))], dim=1)
-    # return weighted average, weighting by variance on each stride (ignoring nans in case any strides have no variance)
-    return weighted_average(align_stride, variance_stride.view(1, -1), 1, ignore_nan=True)
-
+    # return alignment 
+    return alignment(all_input, weight.view(weight.size(0), -1), method=method)
+    
 def get_maximum_strides(h_input, w_input, layer):
     h_max = int(np.floor((h_input + 2*layer.padding[0] - layer.dilation[0]*(layer.kernel_size[0] - 1) -1)/layer.stride[0] + 1))
     w_max = int(np.floor((w_input + 2*layer.padding[1] - layer.dilation[1]*(layer.kernel_size[1] - 1) -1)/layer.stride[1] + 1))
@@ -516,6 +526,20 @@ def weighted_average(data, weights, dim, keepdim=False, ignore_nan=False):
     # return weighted average
     return numerator / denominator
 
+def fgsm_attack(image, epsilon, data_grad, transform, sign):
+    """update an image with fast-gradient sign method"""
+    warn("fgsm_attack is only going to be in utils temporarily!", DeprecationWarning, stacklevel=2)
+    # Collect the element-wise sign of the data gradient
+    if sign:
+        data_grad = data_grad.sign()
+    else:
+        data_grad = data_grad.clone()
+    # Create the perturbed image by adjusting each pixel of the input image
+    perturbed_image = image + epsilon*data_grad
+    # Adding clipping to maintain [0,1] range
+    perturbed_image = transform(perturbed_image)
+    # Return the perturbed image
+    return perturbed_image
 
 def str2bool(str):
     if isinstance(str, bool):

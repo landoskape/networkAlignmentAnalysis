@@ -1,14 +1,11 @@
-import time
 from copy import copy, deepcopy
 from tqdm import tqdm
 import torch
 from networkAlignmentAnalysis.utils import (transpose_list,
                                             condense_values,
-                                            value_by_layer,
                                             test_nets,
                                             train_nets,
                                             save_checkpoint)
-
 
 @train_nets
 def train(nets, optimizers, dataset, **parameters):
@@ -24,11 +21,22 @@ def train(nets, optimizers, dataset, **parameters):
     use_train = parameters.get('train_set', True)
     dataloader = dataset.train_loader if use_train else dataset.test_loader
     num_steps = len(dataset.train_loader)*parameters['num_epochs']
+    
+    # --- optional W&B logging ---
+    run = parameters.get('run')
 
     # --- optional analyses ---
     measure_alignment = parameters.get('alignment', True)
     measure_delta_weights = parameters.get('delta_weights', False)
     measure_frequency = parameters.get('frequency', 1)
+    
+    # --- optional training method: manual shaping with eigenvectors ---
+    manual_shape = parameters.get('manual_shape', False) # true or False, whether to do this
+    # frequency of manual shape (similar to measure_frequency)
+    # if positive, by minibatch, if negative, by epoch
+    manual_frequency = parameters.get('manual_frequency', -1) 
+    manual_transforms = parameters.get('manual_transforms', None) # len()==len(nets) callable methods
+    manual_layers = parameters.get('manual_layers', None) # index to which layers
 
     # --- create results dictionary if not provided and handle checkpoint info ---
     results = parameters.get('results', False)
@@ -77,7 +85,7 @@ def train(nets, optimizers, dataset, **parameters):
             loss = [dataset.measure_loss(output, labels) for output in outputs]
             for l, opt in zip(loss, optimizers):
                 l.backward() 
-                opt.step() 
+                opt.step()
                 
             results['loss'][cidx] = torch.tensor([l.item() for l in loss])
             results['accuracy'][cidx] = torch.tensor([dataset.measure_accuracy(output, labels) for output in outputs])
@@ -92,7 +100,29 @@ def train(nets, optimizers, dataset, **parameters):
                     # Measure change in weights if requested
                     results['delta_weights'].append([net.compare_weights(init_weight)
                                                     for net, init_weight in zip(nets, results['init_weights'])])
-            
+
+            if run is not None:
+                run.log({f'losses/loss-{ii}': l.item() for ii, l in enumerate(loss)} 
+                        | {f'accuracies/accuracy-{ii}': dataset.measure_accuracy(output, labels) for ii, output in enumerate(outputs)}
+                        # {f'alignments/alignment-{ii}': alignment for ii, alignment in enumerate(results['alignment'][-1])}
+                        | {'batch': cidx})
+
+        if manual_shape:
+            # only do it at the end of #=manual_frequency epochs (but not last)
+            if ((epoch+1) % manual_frequency == 0) and (epoch < parameters['num_epochs']-1):
+                for net, transform in tqdm(zip(nets, manual_transforms), desc='manual shaping', leave=False):
+                    # just use this minibatch for computing eigenfeatures
+                    inputs, _ = net._process_collect_activity(dataset,
+                                                              train_set=False,
+                                                              with_updates=False,
+                                                              use_training_mode=False)
+                    _, eigenvalues, eigenvectors = net.measure_eigenfeatures(inputs, with_updates=False)
+                    idx_to_layer_lookup = {layer: idx for idx, layer in enumerate(net.get_alignment_layer_indices())}
+                    eigenvalues = [eigenvalues[idx_to_layer_lookup[ml]] for ml in manual_layers]
+                    eigenvectors = [eigenvectors[idx_to_layer_lookup[ml]] for ml in manual_layers]
+                    net.shape_eigenfeatures(manual_layers, eigenvalues, eigenvectors, transform)
+
+
         if save_ckpt & (epoch % freq_ckpt == 0):
             save_checkpoint(nets,
                             optimizers,
@@ -113,6 +143,9 @@ def train(nets, optimizers, dataset, **parameters):
 @test_nets
 def test(nets, dataset, **parameters):
     """method for testing network on supervised learning problem"""
+    
+    # --- optional W&B logging ---
+    run = parameters.get('run')
 
     # input argument checks
     if not(isinstance(nets, list)): nets = [nets]
@@ -154,7 +187,7 @@ def test(nets, dataset, **parameters):
         if measure_alignment:
             alignment.append([net.measure_alignment(images, precomputed=True, method='alignment')
                               for net in nets])
-    
+
     results = {
         'loss': [loss / num_batches for loss in total_loss],
         'accuracy': [correct / num_batches for correct in num_correct],
@@ -162,6 +195,10 @@ def test(nets, dataset, **parameters):
 
     if measure_alignment:
         results['alignment'] = condense_values(transpose_list(alignment))
+
+    if run is not None:
+        run.summary['test_loss'] = torch.mean(torch.tensor(results['loss']))
+        run.summary['test_accuracy'] = torch.mean(torch.tensor(results['accuracy']))
 
     return results
 
