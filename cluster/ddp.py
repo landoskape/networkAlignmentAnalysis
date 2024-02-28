@@ -25,11 +25,9 @@ def train(args, model, device, dataset, optimizer, epoch, rank, train=True):
         else:
             dataset.test_sampler.set_epoch(epoch)
     
-    print(f"From train rank {rank}- dataset length={len(dataloader.dataset)}, dataloader length={len(dataloader)}")
     model.train()
     for batch_idx, batch in enumerate(dataloader):
         data, target = dataset.unwrap_batch(batch, device=device)
-        print(f"--- in minibatch train rank {rank}- batch size={data.shape}")
         optimizer.zero_grad()
         output = model(data)
         loss = dataset.measure_loss(output, target)
