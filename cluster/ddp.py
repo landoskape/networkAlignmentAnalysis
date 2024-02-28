@@ -6,6 +6,7 @@ from torch.optim.lr_scheduler import StepLR
 
 import os
 import sys
+import time
 import torch.distributed as dist
 from torch.nn.parallel import DistributedDataParallel as DDP
 from socket import gethostname
@@ -55,11 +56,9 @@ def test(model, device, dataset, train=False):
             correct += pred.eq(target.view_as(pred)).sum().item()
             attempts += data.size(0)
 
-    test_loss /= len(dataloader.dataset)
+    test_loss /= attempts
 
-    print('\nTest set: Average loss: {:.4f}, Accuracy: {}/{} ({:.0f}%)\n'.format(
-        test_loss, correct, attempts,
-        100. * correct / attempts))
+    print(f"\nTest set: Average loss: {test_loss:.4f}, Accuracy: {correct}/{attempts} ({100.*correct/attempts:.0f}%)\n")
 
 def create_dataset(name, net, distributed=True, loader_parameters={}):
     return datasets.get_dataset(name, build=True, distributed=distributed, 
@@ -72,7 +71,11 @@ def setup(rank, world_size):
 def main():
     # Training settings
     parser = argparse.ArgumentParser(description='PyTorch ImageNet Example')
-    parser.add_argument('--batch-size', type=int, default=128, metavar='N',
+    parser.add_argument('--model', type=str, default='AlexNet',
+                        help='which model type to use (default: AlexNet)')
+    parser.add_argument('--dataset', type=str, default='ImageNet',
+                        help='which dataset to use (default: ImageNet)')
+    parser.add_argument('--batch-size', type=int, default=64, metavar='N',
                         help='input batch size for training (default: 64)')
     parser.add_argument('--epochs', type=int, default=14, metavar='N',
                         help='number of epochs to train (default: 14)')
@@ -115,8 +118,8 @@ def main():
     torch.cuda.set_device(local_rank)
     print(f"host: {gethostname()}, rank: {rank}, local_rank: {local_rank}")
 
-    model_name = 'AlexNet'
-    dataset_name = 'MNIST'
+    model_name = args.model
+    dataset_name = args.dataset
     net = get_model(model_name, build=True, dataset=dataset_name)
     dataset = create_dataset(dataset_name, net, distributed=world_size>1, loader_parameters=loader_parameters)
 
@@ -126,9 +129,13 @@ def main():
 
     scheduler = StepLR(optimizer, step_size=1, gamma=args.gamma)
     for epoch in range(1, args.epochs + 1):
+        if rank == 0:
+            epoch_time = time.time()
         train(args, ddp_model, local_rank, dataset, optimizer, epoch, rank)
         if rank == 0: test(ddp_model, local_rank, dataset)
         scheduler.step()
+        if rank == 0:
+            print(f"train & test epoch time from rank {rank} = {time.time() - epoch_time}")
 
     if args.save_model and rank == 0:
         torch.save(model.state_dict(), f"{model_name}_{dataset_name}.pt")
