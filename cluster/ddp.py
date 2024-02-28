@@ -93,6 +93,9 @@ def main():
                         help='For Saving the current Model')
     args = parser.parse_args()
     
+    if rank==0:
+        prep_time = time.time()
+
     torch.manual_seed(args.seed)
 
     world_size = int(os.environ["WORLD_SIZE"])
@@ -126,6 +129,10 @@ def main():
     optimizer = optim.Adadelta(ddp_model.parameters(), lr=args.lr)
 
     scheduler = StepLR(optimizer, step_size=1, gamma=args.gamma)
+
+    if rank==0:
+        print(f"from rank {rank} -- about to train, preparation time: {time.time() - prep_time}")
+
     for epoch in range(1, args.epochs + 1):
         if rank == 0:
             epoch_time = time.time()
