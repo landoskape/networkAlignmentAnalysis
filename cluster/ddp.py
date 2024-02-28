@@ -139,7 +139,8 @@ def main():
         if rank == 0: test(ddp_model, local_rank, dataset)
         scheduler.step()
         if rank == 0:
-            print(f"train & test epoch time from rank {rank} = {time.time() - epoch_time}")
+            epoch_time = time.time() - epoch_time
+            print(f"\nEpoch {epoch}, Train & Test Time = {epoch_time:.1f} seconds (measured from rank {rank}).\n")
 
     if args.save_model and rank == 0:
         torch.save(model.state_dict(), f"{model_name}_{dataset_name}.pt")
