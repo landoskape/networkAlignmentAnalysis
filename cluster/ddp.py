@@ -25,9 +25,14 @@ def train(args, model, device, dataset, optimizer, epoch, rank, train=True):
         else:
             dataset.test_sampler.set_epoch(epoch)
     
+    if rank==0 and epoch==1:
+        first_batch_timer = time.time()
+
     model.train()
     for batch_idx, batch in enumerate(dataloader):
         data, target = dataset.unwrap_batch(batch, device=device)
+        if rank==0 and epoch==1 and batch_idx==0:
+            print(f"Train-- epoch {epoch}, rank {rank}, first batch loaded in {time.time() - first_batch_timer} seconds.")
         optimizer.zero_grad()
         output = model(data)
         loss = dataset.measure_loss(output, target)
