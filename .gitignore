@@ -1,6 +1,6 @@
 # Saved files
 *.pkl
-slurm*
+slurm-*.out
 *.pt
 
 # VSCODE
