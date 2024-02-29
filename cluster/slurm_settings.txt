@@ -1,0 +1,3 @@
+# Job Folder 
+JOB_FOLDER=./jobs/
+
