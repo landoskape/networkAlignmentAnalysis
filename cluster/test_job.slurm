@@ -7,13 +7,14 @@
 #SBATCH --time=00:20:00          # total run time limit (HH:MM:SS)
 #SBATCH --mail-type=begin        # send email when job begins
 #SBATCH --mail-type=end          # send email when job ends
+#SBATCH --output=/dev/null       # no output message
 
 source cluster/slurm_settings.txt
 mkdir -p $JOB_FOLDER
 logfile="${JOB_FOLDER}slurm-${SLURM_JOB_ID}.out"
 
-echo "Writing to ${logfile}"
-echo "Testing writing to ${logfile}" >> $logfile
+# echo "Writing to ${logfile}"
+echo "Writing to ${logfile}" >> $logfile
 
 module purge
 module load python
@@ -29,4 +30,4 @@ end_time=$(date +%s)
 total_time=$((end_time-start_time))
 echo "Total Time= "$total_time" seconds" >> $logfile
 
-echo "Finished."
+# echo "Finished."
