@@ -1,6 +1,7 @@
 # Saved files
 *.pkl
 slurm*
+*.pt
 
 # VSCODE
 .vscode/

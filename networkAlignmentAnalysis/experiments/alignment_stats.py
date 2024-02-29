@@ -8,11 +8,11 @@ from .experiment import Experiment
 
 class AlignmentStatistics(Experiment):
     def get_basename(self):
-        return 'alignment_stats'
-    
+        return "alignment_stats"
+
     def prepare_path(self):
         return [self.args.network, self.args.dataset, self.args.optimizer]
-    
+
     def make_args(self, parser):
         """
         Method for adding experiment specific arguments to the argument parser
@@ -24,7 +24,6 @@ class AlignmentStatistics(Experiment):
         parser = arglib.add_alignment_analysis_parameters(parser)
         return parser
 
-    
     def load_networks(self):
         """
         method for loading networks
@@ -35,43 +34,52 @@ class AlignmentStatistics(Experiment):
         with each network
         """
         # get optimizer
-        if self.args.optimizer == 'Adam':
+        if self.args.optimizer == "Adam":
             optim = torch.optim.Adam
-        elif self.args.optimizer == 'SGD':
+        elif self.args.optimizer == "SGD":
             optim = torch.optim.SGD
         else:
             raise ValueError(f"optimizer ({self.args.optimizer}) not recognized")
-        
-        nets = [get_model(self.args.network, build=True, dataset=self.args.dataset, dropout=self.args.default_dropout, ignore_flag=self.args.ignore_flag)
-                for _ in range(self.args.replicates)]
+
+        nets = [
+            get_model(
+                self.args.network,
+                build=True,
+                dataset=self.args.dataset,
+                dropout=self.args.default_dropout,
+                ignore_flag=self.args.ignore_flag,
+            )
+            for _ in range(self.args.replicates)
+        ]
         nets = [net.to(self.device) for net in nets]
-        
-        optimizers = [optim(net.parameters(), 
-                            lr=self.args.default_lr, 
-                            weight_decay=self.args.default_wd)
-                      for net in nets]
+
+        optimizers = [
+            optim(net.parameters(), lr=self.args.default_lr, weight_decay=self.args.default_wd)
+            for net in nets
+        ]
 
         prms = {
-            'vals': [self.args.network], # require iterable for identifying how many types of networks there are (just one type...)
-            'name': 'network',
-            'dataset': self.args.dataset,
-            'dropout': self.args.default_dropout,
-            'lr': self.args.default_lr,
-            'weight_decay': self.args.default_wd,
+            "vals": [
+                self.args.network
+            ],  # require iterable for identifying how many types of networks there are (just one type...)
+            "name": "network",
+            "dataset": self.args.dataset,
+            "dropout": self.args.default_dropout,
+            "lr": self.args.default_lr,
+            "weight_decay": self.args.default_wd,
         }
         return nets, optimizers, prms
-    
 
     def main(self):
         """
         main experiment loop
-        
+
         create networks (this is where the specific experiment is determined)
         train and test networks
         do supplementary analyses
         """
 
-        # load networks 
+        # load networks
         nets, optimizers, prms = self.load_networks()
 
         # load dataset
@@ -81,14 +89,18 @@ class AlignmentStatistics(Experiment):
         train_results, test_results = processing.train_networks(self, nets, optimizers, dataset)
 
         # do targeted dropout experiment
-        dropout_results, dropout_parameters = processing.progressive_dropout_experiment(self, nets, dataset, alignment=test_results['alignment'], train_set=False)
-        
+        dropout_results, dropout_parameters = processing.progressive_dropout_experiment(
+            self, nets, dataset, alignment=test_results["alignment"], train_set=False
+        )
+
         # measure eigenfeatures
         eigen_results = processing.measure_eigenfeatures(self, nets, dataset, train_set=False)
 
         # do targeted dropout experiment
-        evec_dropout_results, evec_dropout_parameters = processing.eigenvector_dropout(self, nets, dataset, eigen_results, train_set=False)
-        
+        evec_dropout_results, evec_dropout_parameters = processing.eigenvector_dropout(
+            self, nets, dataset, eigen_results, train_set=False
+        )
+
         # make full results dictionary
         results = dict(
             prms=prms,
@@ -99,7 +111,7 @@ class AlignmentStatistics(Experiment):
             eigen_results=eigen_results,
             evec_dropout_results=evec_dropout_results,
             evec_dropout_parameters=evec_dropout_parameters,
-        )    
+        )
 
         # return results and trained networks
         return results, nets
@@ -108,10 +120,21 @@ class AlignmentStatistics(Experiment):
         """
         main plotting loop
         """
-        plotting.plot_train_results(self, results['train_results'], results['test_results'], results['prms'])
-        plotting.plot_dropout_results(self, results['dropout_results'], results['dropout_parameters'], results['prms'], dropout_type='nodes')
-        plotting.plot_eigenfeatures(self, results['eigen_results'], results['prms'])
-        plotting.plot_dropout_results(self, results['evec_dropout_results'], results['evec_dropout_parameters'], results['prms'], dropout_type='eigenvectors')
-
-
-    
+        plotting.plot_train_results(
+            self, results["train_results"], results["test_results"], results["prms"]
+        )
+        plotting.plot_dropout_results(
+            self,
+            results["dropout_results"],
+            results["dropout_parameters"],
+            results["prms"],
+            dropout_type="nodes",
+        )
+        plotting.plot_eigenfeatures(self, results["eigen_results"], results["prms"])
+        plotting.plot_dropout_results(
+            self,
+            results["evec_dropout_results"],
+            results["evec_dropout_parameters"],
+            results["prms"],
+            dropout_type="eigenvectors",
+        )

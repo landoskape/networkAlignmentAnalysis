@@ -1,3 +1,4 @@
+from warnings import warn
 from typing import List
 from contextlib import contextmanager
 from functools import wraps
@@ -5,34 +6,6 @@ import numpy as np
 from scipy.linalg import null_space
 from sklearn.decomposition import IncrementalPCA
 import torch
-from matplotlib import pyplot as plt
-from torchvision.transforms import v2 as transforms
-
-
-# -- deprecation block --
-from warnings import warn
-
-def avg_align_by_layer(full):
-    warn("avg_align_by_layer is deprecated, change to avg_value_by_layer!", DeprecationWarning, stacklevel=2)
-    return avg_value_by_layer(full)
-
-def align_by_layer(full, layer):
-    warn("align_by_layer is deprecated, change to value_by_layer!", DeprecationWarning, stacklevel=2)
-    return value_by_layer(full, layer)
-
-def alignment_conv_look(processed_activity, layer, stride, grid, method='alignment'):
-    warn("alignment_conv_look is deprecated. no longer necessary to use!", DeprecationWarning, stacklevel=2)
-    # Take (NI, C, H, W) (preprocessed) input activity
-    # And compute the similarity for one "look" e.g. one position of the convolutional filter
-    num_images = processed_activity.shape[0]
-    num_elements = processed_activity.shape[1] * layer.kernel_size[0] * layer.kernel_size[1]
-    h_idx = grid[0] + stride[0]*layer.stride[0]
-    w_idx = grid[1] + stride[1]*layer.stride[1]
-    aligned_input = processed_activity[:, :, h_idx, w_idx].reshape(num_images, num_elements)
-    aligned_weights = layer.weight.data.reshape(layer.out_channels, num_elements).detach()
-    stride_variance = torch.mean(torch.var(aligned_input, dim=1))
-    return alignment(aligned_input, aligned_weights, method=method), stride_variance
-# ------------------------
 
 
 # -------------- context managers & decorators --------------
@@ -44,6 +17,7 @@ def no_grad(no_grad=True):
     else:
         yield
 
+
 def test_nets(func):
     @wraps(func)
     def wrapper(nets, *args, **kwargs):
@@ -53,15 +27,16 @@ def test_nets(func):
         # do decorated function
         func_outputs = func(nets, *args, **kwargs)
 
-        # return networks to whatever mode they used to be in 
+        # return networks to whatever mode they used to be in
         for train_mode, net in zip(in_training_mode, nets):
             set_net_mode(net, training=train_mode)
 
         # return decorated function outputs
         return func_outputs
-    
+
     # return decorated function
     return wrapper
+
 
 def train_nets(func):
     @wraps(func)
@@ -72,15 +47,16 @@ def train_nets(func):
         # do decorated function
         func_outputs = func(nets, *args, **kwargs)
 
-        # return networks to whatever mode they used to be in 
+        # return networks to whatever mode they used to be in
         for train_mode, net in zip(in_training_mode, nets):
             set_net_mode(net, training=train_mode)
 
         # return decorated function outputs
         return func_outputs
-    
+
     # return decorated function
     return wrapper
+
 
 def set_net_mode(net, training=True):
     """helper for setting mode of network and returning current mode"""
@@ -94,16 +70,18 @@ def set_net_mode(net, training=True):
     # return original mode of network
     return in_training_mode
 
+
 # ------- some other things -------
 def get_device(obj):
     """simple method to get device of input tensor or nn.Module"""
     if isinstance(obj, torch.nn.Module):
         return next(obj.parameters()).device.type
     elif isinstance(obj, torch.Tensor):
-        return 'cuda' if obj.is_cuda else 'cpu'
+        return "cuda" if obj.is_cuda else "cpu"
     else:
         raise ValueError("")
-    
+
+
 def check_iterable(val):
     """duck-type check if val is iterable"""
     try:
@@ -113,6 +91,7 @@ def check_iterable(val):
     else:
         return True
 
+
 def remove_by_idx(input, idx, dim):
     """
     remove part of input indexed by idx on dim
@@ -120,31 +99,38 @@ def remove_by_idx(input, idx, dim):
     idx_keep = [i for i in range(input.size(dim)) if i not in idx]
     return torch.index_select(input, dim, torch.tensor(idx_keep).to(input.device))
 
+
 def get_eval_transform_by_cutoff(cutoff):
     """
     get method for transforming eigenvalues into a binary keep fraction
-    
+
     will scale each eigenvector by 1 or 0 depending on whether that eigenvalue
     explains more than **cutoff** fraction of the variance
 
     returns a callable method
     """
+
     def eval_transform(evals):
-        assert torch.all(evals >= 0), "found negative eigenvalues, doesn't work for 'cutoff' eval_transform"
+        assert torch.all(
+            evals >= 0
+        ), "found negative eigenvalues, doesn't work for 'cutoff' eval_transform"
         evals = evals / torch.sum(evals)
-        return 1.0*(evals > cutoff)
+        return 1.0 * (evals > cutoff)
+
     return eval_transform
+
 
 def smartcorr(input):
     """
     Performs torch corrcoef on the input data but sets each pair-wise correlation coefficent
     to 0 where the activity has no variance (var=0) for a particular dimension (replaces nans with zeros)sss
     """
-    idx_zeros = torch.var(input, dim=1)==0
+    idx_zeros = torch.var(input, dim=1) == 0
     cc = torch.corrcoef(input)
-    cc[idx_zeros,:] = 0
-    cc[:,idx_zeros] = 0
+    cc[idx_zeros, :] = 0
+    cc[:, idx_zeros] = 0
     return cc
+
 
 def batch_cov(input, centered=True, correction=True):
     """
@@ -162,29 +148,30 @@ def batch_cov(input, centered=True, correction=True):
 
     # check if batch dimension was provided
     no_batch = input.ndim == 2
-    
+
     # add an empty batch dimension if not provided
-    if no_batch: 
-        input = input.unsqueeze(0) 
-    
+    if no_batch:
+        input = input.unsqueeze(0)
+
     # measure number of samples of each input matrix
-    S = input.size(2) 
-    
+    S = input.size(2)
+
     # subtract mean if doing centered covariance
     if centered:
         input = input - input.mean(dim=2, keepdim=True)
 
     # measure covariance of each input matrix
     bcov = torch.bmm(input, input.transpose(1, 2))
-    
+
     # correct for number of samples
-    bcov /= (S - 1.0*correction)
-    
+    bcov /= S - 1.0 * correction
+
     # remove empty batch dimension if not provided
-    if no_batch: 
-        bcov = bcov.squeeze(0) 
+    if no_batch:
+        bcov = bcov.squeeze(0)
 
     return bcov
+
 
 def smart_pca(input, centered=True, use_rank=True, correction=True):
     """
@@ -197,29 +184,29 @@ def smart_pca(input, centered=True, use_rank=True, correction=True):
 
     if it fails, will fall back on performing sklearns IncrementalPCA whenever forcetry=True
     """
-    assert (input.ndim==2) or (input.ndim==3), "input should be a matrix or batched matrices"
+    assert (input.ndim == 2) or (input.ndim == 3), "input should be a matrix or batched matrices"
     assert isinstance(correction, bool), "correction should be a boolean"
 
-    if input.ndim==2:
+    if input.ndim == 2:
         no_batch = True
-        input = input.unsqueeze(0) # create batch dimension for uniform code
+        input = input.unsqueeze(0)  # create batch dimension for uniform code
     else:
         no_batch = False
-        
+
     _, D, S = input.size()
     if D > S:
         # if more dimensions than samples, it's more efficient to run svd
         v, w, _ = named_transpose([torch.linalg.svd(inp) for inp in input])
         # convert singular values to eigenvalues
-        w = [ww**2/(S-1.0*correction) for ww in w]
+        w = [ww**2 / (S - 1.0 * correction) for ww in w]
         # append zeros because svd returns w in R**k where k = min(D, S)
-        w = [torch.concatenate((ww, torch.zeros(D-S))) for ww in w]
-    
+        w = [torch.concatenate((ww, torch.zeros(D - S))) for ww in w]
+
     else:
         # if more samples than dimensions, it's more efficient to run eigh
         bcov = batch_cov(input, centered=centered, correction=correction)
         w, v = named_transpose([eigendecomposition(C, use_rank=use_rank) for C in bcov])
-    
+
     # return to stacked tensor across batch dimension
     w = torch.stack(w)
     v = torch.stack(v)
@@ -231,6 +218,7 @@ def smart_pca(input, centered=True, use_rank=True, correction=True):
 
     # return eigenvalues and eigenvectors
     return w, v
+
 
 def eigendecomposition(C, use_rank=True):
     """
@@ -244,13 +232,13 @@ def eigendecomposition(C, use_rank=True):
     """
     try:
         # measure eigenvalues and eigenvectors
-        w, v = torch.linalg.eigh(C) 
+        w, v = torch.linalg.eigh(C)
 
     except torch._C._LinAlgError as error:
         # this happens if the algorithm failed to converge
         # try with sklearn's incrementalPCA algorithm
         return sklearn_pca(C, use_rank=use_rank)
-    
+
     except Exception as error:
         # if any other exception, raise it
         raise error
@@ -262,17 +250,18 @@ def eigendecomposition(C, use_rank=True):
 
     # iff use_rank=True, will set eigenvalues to 0 for probable numerical errors
     if use_rank:
-        crank = torch.linalg.matrix_rank(C) # measure rank of covariance
-        w[crank:] = 0 # set eigenvalues beyond rank to 0
+        crank = torch.linalg.matrix_rank(C)  # measure rank of covariance
+        w[crank:] = 0  # set eigenvalues beyond rank to 0
 
     # return eigenvalues and eigenvectors
     return w, v
 
+
 def sklearn_pca(input, use_rank=True, rank=None):
     """
     sklearn incrementalPCA algorithm serving as a replacement for eigh when it fails
-    
-    input should be a tensor with shape (num_samples, num_features) or it can be a 
+
+    input should be a tensor with shape (num_samples, num_features) or it can be a
     covariance matrix with (num_features, num_features)
 
     if use_rank=True, will set num_components to the rank of input and then fill out the
@@ -289,7 +278,7 @@ def sklearn_pca(input, use_rank=True, rank=None):
     num_samples, num_features = input.shape
 
     # measure rank (or set to None)
-    rank = None if not use_rank else (rank if rank is not None else fast_rank(input))    
+    rank = None if not use_rank else (rank if rank is not None else fast_rank(input))
 
     # create and fit IncrementalPCA object on input data
     ipca = IncrementalPCA(n_components=rank).fit(input)
@@ -307,8 +296,9 @@ def sklearn_pca(input, use_rank=True, rank=None):
         v_kernel = null_space(v).T
         v = np.vstack((v, v_kernel))
         w = np.concatenate((w, np.zeros(v_kernel.shape[0])))
-    
+
     return torch.tensor(w, dtype=torch.float), torch.tensor(v, dtype=torch.float).T
+
 
 def fast_rank(input):
     """uses transpose to speed up rank computation, otherwise normal"""
@@ -316,25 +306,26 @@ def fast_rank(input):
         input = torch.transpose(input, -2, -1)
     return int(torch.linalg.matrix_rank(input))
 
+
 # ------------------ alignment functions ----------------------
-def alignment(input, weight, method='alignment'):
+def alignment(input, weight, method="alignment"):
     """
     measure alignment (proportion variance explained) between **input** and **weight**
-    
-    computes the rayleigh quotient between each weight vector in **weight** and the **input** fed 
+
+    computes the rayleigh quotient between each weight vector in **weight** and the **input** fed
     into **weight**. Typically, **input** is the output in Layer L-1 and **weight** is from Layer L
 
-    the output is normalized by the total variance in output of layer L-1 to measure the proportion 
+    the output is normalized by the total variance in output of layer L-1 to measure the proportion
     of variance of in **input** is explained by a projection onto node's weights in **weight**
 
     args
     ----
-        input: (batch, neurons) torch tensor 
+        input: (batch, neurons) torch tensor
             - represents input activity being fed in to network weight layer
-        weight: (num_out, num_in) torch tensor 
+        weight: (num_out, num_in) torch tensor
             - represents weights multiplied by input layer
         method: string, default='alignment'
-            - which method to use to measure structure in **input** 
+            - which method to use to measure structure in **input**
             - if 'alignment', uses covariance matrix of **input**
             - if 'similarity', uses correlation matrix of **input**
 
@@ -343,55 +334,53 @@ def alignment(input, weight, method='alignment'):
         alignment: (num_out, ) torch tensor
             - proportion of variance explained by projection of **input** onto each **weight** vector
     """
-    assert method=='alignment' or method=='similarity', "method must be set to either 'alignment' or 'similarity' (or None, default is alignment)"
-    if method=='alignment':
+    assert (
+        method == "alignment" or method == "similarity"
+    ), "method must be set to either 'alignment' or 'similarity' (or None, default is alignment)"
+    if method == "alignment":
         cc = torch.cov(input.T)
-    elif method=='similarity':
+    elif method == "similarity":
         cc = smartcorr(input.T)
-    else: 
-        raise ValueError(f"did not recognize method ({method}), must be 'alignment' or 'similarity'")
+    else:
+        raise ValueError(
+            f"did not recognize method ({method}), must be 'alignment' or 'similarity'"
+        )
     # Compute rayleigh quotient
     rq = torch.sum(torch.matmul(weight, cc) * weight, axis=1) / torch.sum(weight * weight, axis=1)
     # proportion of variance explained by a projection of the input onto each weight
-    return rq/torch.trace(cc)
+    return rq / torch.trace(cc)
 
-def alignment_linear(activity, layer, method='alignment'):
-    """wrapper for alignment of linear layer, kwargs for compatibility"""
-    return alignment(activity, layer.weight.data, method=method)
 
-def alignment_convolutional(activity, layer, method='alignment'):
-    """
-    wrapper for alignment of convolutional layer (for conv2d)
-
-    measures alignment using each convolutional stride then takes a weighted
-    average across strides by the variance in the input data
-    """
-    layer_prms = get_unfold_params(layer)
-    # unfold data so it's in shape (batch, kernel_dim, num_strides)
-    unfolded_input = torch.nn.functional.unfold(activity, layer.kernel_size, **layer_prms)
-    # now fold stride dimension into batch dimension to measure alignment across all batches and strides together
-    all_input = unfolded_input.transpose(1, 2).contiguous().view(-1, unfolded_input.size(1))
-    # get weights of layer
-    weight = layer.weight.data
-    # return alignment 
-    return alignment(all_input, weight.view(weight.size(0), -1), method=method)
-    
 def get_maximum_strides(h_input, w_input, layer):
-    h_max = int(np.floor((h_input + 2*layer.padding[0] - layer.dilation[0]*(layer.kernel_size[0] - 1) -1)/layer.stride[0] + 1))
-    w_max = int(np.floor((w_input + 2*layer.padding[1] - layer.dilation[1]*(layer.kernel_size[1] - 1) -1)/layer.stride[1] + 1))
+    h_max = int(
+        np.floor(
+            (h_input + 2 * layer.padding[0] - layer.dilation[0] * (layer.kernel_size[0] - 1) - 1)
+            / layer.stride[0]
+            + 1
+        )
+    )
+    w_max = int(
+        np.floor(
+            (w_input + 2 * layer.padding[1] - layer.dilation[1] * (layer.kernel_size[1] - 1) - 1)
+            / layer.stride[1]
+            + 1
+        )
+    )
     return h_max, w_max
+
 
 def get_unfold_params(layer):
     return dict(stride=layer.stride, padding=layer.padding, dilation=layer.dilation)
+
 
 def avg_value_by_layer(full):
     """
     return average value per layer across training
 
-    **full** is a list of lists where the outer list is each snapshot through training or 
+    **full** is a list of lists where the outer list is each snapshot through training or
     minibatch etc and each inner list is the value for each node in the network across layers
     of a particular measurement
-    
+
     For example:
     num_epochs = 1000
     nodes_per_layer = [50, 40, 30, 20]
@@ -404,10 +393,11 @@ def avg_value_by_layer(full):
     """
     num_epochs = len(full)
     num_layers = len(full[0])
-    avg_full = torch.zeros((num_layers,num_epochs))
+    avg_full = torch.zeros((num_layers, num_epochs))
     for layer in range(num_layers):
-        avg_full[layer,:] = torch.tensor([torch.mean(f[layer]) for f in full])
+        avg_full[layer, :] = torch.tensor([torch.mean(f[layer]) for f in full])
     return avg_full.cpu()
+
 
 def value_by_layer(full: List[List[torch.Tensor]], layer: int) -> torch.Tensor:
     """
@@ -423,6 +413,7 @@ def value_by_layer(full: List[List[torch.Tensor]], layer: int) -> torch.Tensor:
     """
     return torch.cat([f[layer].view(1, -1) for f in full], dim=0).cpu()
 
+
 def condense_values(full: List[List[List[torch.Tensor]]]) -> List[torch.Tensor]:
     """
     condense List[List[List[Tensor]]] representing some value measured across networks, batches, and layers, for each node in the layer
@@ -436,11 +427,16 @@ def condense_values(full: List[List[List[torch.Tensor]]]) -> List[torch.Tensor]:
     the tensor should have shape = number of nodes in this layer (also must be the same for each network) (or can be anything as long as consistent across layers)
     """
     num_layers = len(full[0][0])
-    return [torch.stack([value_by_layer(value, layer) for value in full]) for layer in range(num_layers)]
+    return [
+        torch.stack([value_by_layer(value, layer) for value in full])
+        for layer in range(num_layers)
+    ]
+
 
 def transpose_list(list_of_lists):
     """helper function for transposing the order of a list of lists"""
     return list(map(list, zip(*list_of_lists)))
+
 
 def named_transpose(list_of_lists):
     """
@@ -452,6 +448,7 @@ def named_transpose(list_of_lists):
     """
     return map(list, zip(*list_of_lists))
 
+
 def ptp(tensor, dim=None, keepdim=False):
     """
     simple method for measuring range of tensor on requested dimension or on all data
@@ -460,13 +457,15 @@ def ptp(tensor, dim=None, keepdim=False):
         return tensor.max() - tensor.min()
     return tensor.max(dim, keepdim).values - tensor.min(dim, keepdim).values
 
+
 def rms(tensor, dim=None, keepdim=False):
     """simple method for measuring root-mean-square on requested dimension or on all data in tensor"""
     if dim is None:
         return torch.sqrt(torch.mean(tensor**2))
     return torch.sqrt(torch.mean(tensor**2, dim=dim, keepdim=keepdim))
 
-def compute_stats_by_type(tensor, num_types, dim, method='var'):
+
+def compute_stats_by_type(tensor, num_types, dim, method="var"):
     """
     helper method for returning the mean and variance across a certain dimension
     where multiple types are concatenated on that dimension
@@ -479,22 +478,23 @@ def compute_stats_by_type(tensor, num_types, dim, method='var'):
     num_per_type = int(num_on_dim / num_types)
     tensor_by_type = tensor.unsqueeze(dim)
     expand_shape = list(tensor_by_type.shape)
-    expand_shape[dim+1] = num_per_type
+    expand_shape[dim + 1] = num_per_type
     expand_shape[dim] = num_types
     tensor_by_type = tensor_by_type.view(expand_shape)
-    type_means = torch.mean(tensor_by_type, dim=dim+1)
-    if method=='var':
-        type_dev = torch.var(tensor_by_type, dim=dim+1)
-    elif method=='std':
-        type_dev = torch.std(tensor_by_type, dim=dim+1)
-    elif method=='se':
-        type_dev = torch.std(tensor_by_type, dim=dim+1) / np.sqrt(num_per_type)
-    elif method=='range':
-        type_dev = ptp(tensor_by_type, dim=dim+1)
+    type_means = torch.mean(tensor_by_type, dim=dim + 1)
+    if method == "var":
+        type_dev = torch.var(tensor_by_type, dim=dim + 1)
+    elif method == "std":
+        type_dev = torch.std(tensor_by_type, dim=dim + 1)
+    elif method == "se":
+        type_dev = torch.std(tensor_by_type, dim=dim + 1) / np.sqrt(num_per_type)
+    elif method == "range":
+        type_dev = ptp(tensor_by_type, dim=dim + 1)
     else:
         raise ValueError(f"Method ({method}) not recognized.")
 
     return type_means, type_dev
+
 
 def weighted_average(data, weights, dim, keepdim=False, ignore_nan=False):
     """
@@ -506,14 +506,16 @@ def weighted_average(data, weights, dim, keepdim=False, ignore_nan=False):
     if ignore_nan=True, (default=False), will ignore nans in weighted average
     """
     assert data.ndim == weights.ndim, "data and weights must have same number of dimensions"
-    assert torch.all(weights[~torch.isnan(weights)]>=0), "weights must be nonnegative"
-    
-    for d in (dim if check_iterable(dim) else [dim]):
-        assert data.size(d) == weights.size(d), f"data and weights must have same size in averaging dimensions (data.size({d})={data.size(d)}, (weight.size({d})={weights.size(d)}))"
-    
+    assert torch.all(weights[~torch.isnan(weights)] >= 0), "weights must be nonnegative"
+
+    for d in dim if check_iterable(dim) else [dim]:
+        assert data.size(d) == weights.size(
+            d
+        ), f"data and weights must have same size in averaging dimensions (data.size({d})={data.size(d)}, (weight.size({d})={weights.size(d)}))"
+
     # use normal sum if not ignore nan, otherwise use nansum
     sum = torch.nansum if ignore_nan else torch.sum
-    
+
     # make sure nans are in the same place in weights and data for accurate division by total weight
     if ignore_nan:
         weights = weights.expand(data.size())
@@ -526,6 +528,7 @@ def weighted_average(data, weights, dim, keepdim=False, ignore_nan=False):
     # return weighted average
     return numerator / denominator
 
+
 def fgsm_attack(image, epsilon, data_grad, transform, sign):
     """update an image with fast-gradient sign method"""
     warn("fgsm_attack is only going to be in utils temporarily!", DeprecationWarning, stacklevel=2)
@@ -535,18 +538,19 @@ def fgsm_attack(image, epsilon, data_grad, transform, sign):
     else:
         data_grad = data_grad.clone()
     # Create the perturbed image by adjusting each pixel of the input image
-    perturbed_image = image + epsilon*data_grad
+    perturbed_image = image + epsilon * data_grad
     # Adding clipping to maintain [0,1] range
     perturbed_image = transform(perturbed_image)
     # Return the perturbed image
     return perturbed_image
 
+
 def str2bool(str):
     if isinstance(str, bool):
         return str
-    if str.lower() in ('true', '1'):
+    if str.lower() in ("true", "1"):
         return True
-    elif str.lower() in ('false', '0'):
+    elif str.lower() in ("false", "0"):
         return False
     else:
         raise TypeError("Boolean type expected")
@@ -556,10 +560,10 @@ def save_checkpoint(nets, optimizers, results, path):
     """
     Method for saving checkpoints for networks throughout training.
     """
-    multi_model_ckpt = {f'model_state_dict_{i}': net.state_dict()
-                        for i, net in enumerate(nets)}
-    multi_optimizer_ckpt = {f'optimizer_state_dict_{i}': opt.state_dict()
-                            for i, opt in enumerate(optimizers)}
+    multi_model_ckpt = {f"model_state_dict_{i}": net.state_dict() for i, net in enumerate(nets)}
+    multi_optimizer_ckpt = {
+        f"optimizer_state_dict_{i}": opt.state_dict() for i, opt in enumerate(optimizers)
+    }
     checkpoint = results | multi_model_ckpt | multi_optimizer_ckpt
     torch.save(checkpoint, path)
 
@@ -570,23 +574,21 @@ def load_checkpoints(nets, optimizers, device, path):
     TODO: device handling for passing between gpu/cpu
     """
 
-    if device == 'cpu':
+    if device == "cpu":
         checkpoint = torch.load(path, map_location=device)
-    elif device == 'cuda':
+    elif device == "cuda":
         checkpoint = torch.load(path)
 
-    net_ids = sorted([key for key in checkpoint if key.startswith('model_state_dict')])
-    opt_ids = sorted([key for key in checkpoint if key.startswith('optimizer_state_dict')])
-    assert all([oi.split('_')[-1] == ni.split('_')[-1] for oi, ni in zip(opt_ids, net_ids)]), (
-        'nets and optimizers cannot be matched up from checkpoint'
-    )
+    net_ids = sorted([key for key in checkpoint if key.startswith("model_state_dict")])
+    opt_ids = sorted([key for key in checkpoint if key.startswith("optimizer_state_dict")])
+    assert all(
+        [oi.split("_")[-1] == ni.split("_")[-1] for oi, ni in zip(opt_ids, net_ids)]
+    ), "nets and optimizers cannot be matched up from checkpoint"
 
-    [net.load_state_dict(checkpoint.pop(net_id))
-        for net, net_id in zip(nets, net_ids)]
-    [opt.load_state_dict(checkpoint.pop(opt_id))
-        for opt, opt_id in zip(optimizers, opt_ids)]
+    [net.load_state_dict(checkpoint.pop(net_id)) for net, net_id in zip(nets, net_ids)]
+    [opt.load_state_dict(checkpoint.pop(opt_id)) for opt, opt_id in zip(optimizers, opt_ids)]
 
-    if device == 'cuda':
+    if device == "cuda":
         [net.to(device) for net in nets]
 
     return nets, optimizers, checkpoint

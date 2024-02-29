@@ -1,44 +1,68 @@
+"""
+Massive thank you to the Princeton cluster engineers for providing this example (we've only made small changes)
+https://github.com/PrincetonUniversity/multi_gpu_training/blob/main/02_pytorch_ddp/mnist_classify_ddp.py
+"""
+
 import argparse
 import torch
+from torch import nn
 import torch.nn.functional as F
 import torch.optim as optim
+from torchvision import datasets, transforms
 from torch.optim.lr_scheduler import StepLR
 
 import os
-import sys
 import time
 import torch.distributed as dist
 from torch.nn.parallel import DistributedDataParallel as DDP
 from socket import gethostname
 
-mainPath = os.path.dirname(os.path.abspath(__file__)) + "/.."
-sys.path.append(mainPath)
 
-from networkAlignmentAnalysis import datasets
-from networkAlignmentAnalysis.models.registry import get_model
+class Net(nn.Module):
+    def __init__(self):
+        super(Net, self).__init__()
+        self.conv1 = nn.Conv2d(1, 32, 3, 1)
+        self.conv2 = nn.Conv2d(32, 64, 3, 1)
+        self.dropout1 = nn.Dropout(0.25)
+        self.dropout2 = nn.Dropout(0.5)
+        self.fc1 = nn.Linear(9216, 128)
+        self.fc2 = nn.Linear(128, 10)
+
+    def forward(self, x):
+        x = self.conv1(x)
+        x = F.relu(x)
+        x = self.conv2(x)
+        x = F.relu(x)
+        x = F.max_pool2d(x, 2)
+        x = self.dropout1(x)
+        x = torch.flatten(x, 1)
+        x = self.fc1(x)
+        x = F.relu(x)
+        x = self.dropout2(x)
+        x = self.fc2(x)
+        output = F.log_softmax(x, dim=1)
+        return output
 
 
-def train(args, model, device, dataset, optimizer, epoch, rank, train=True):
-    dataloader = dataset.train_loader if train else dataset.test_loader
-    if dataset.distributed:
-        if train:
-            dataset.train_sampler.set_epoch(epoch)
-        else:
-            dataset.test_sampler.set_epoch(epoch)
+def train(args, model, device, dataloader, datasampler, optimizer, epoch, rank):
+    """basic training script"""
+    datasampler.set_epoch(
+        epoch
+    )  # required for different shuffle order of examples in dataset each epoch
 
-    if rank == 0:
+    if rank == 0 and epoch == 1:
         first_batch_timer = time.time()
 
     model.train()
-    for batch_idx, batch in enumerate(dataloader):
-        data, target = dataset.unwrap_batch(batch, device=device)
-        if rank == 0 and batch_idx == 0:
+    for batch_idx, (data, target) in enumerate(dataloader):
+        data, target = data.to(device), target.to(device)
+        if rank == 0 and epoch == 1 and batch_idx == 0:
             print(
                 f"Train-- epoch {epoch}, rank {rank}, first batch loaded in {time.time() - first_batch_timer} seconds."
             )
         optimizer.zero_grad()
         output = model(data)
-        loss = dataset.measure_loss(output, target)
+        loss = F.nll_loss(output, target)
         loss.backward()
         optimizer.step()
         if batch_idx % args.log_interval == 0:
@@ -50,17 +74,16 @@ def train(args, model, device, dataset, optimizer, epoch, rank, train=True):
                 break
 
 
-def test(model, device, dataset, train=False):
-    dataloader = dataset.train_loader if train else dataset.test_loader
+def test(model, device, dataloader):
     model.eval()
     test_loss = 0
     correct = 0
     attempts = 0
     with torch.no_grad():
-        for batch in dataloader:
-            data, target = dataset.unwrap_batch(batch, device=device)
+        for data, target in dataloader:
+            data, target = data.to(device), target.to(device)
             output = model(data)
-            test_loss += dataset.measure_loss(output, target, reduction="sum").item()
+            test_loss += F.nll_loss(output, target, reduction="sum").item()  # sum up batch loss
             pred = output.argmax(dim=1, keepdim=True)  # get the index of the max log-probability
             correct += pred.eq(target.view_as(pred)).sum().item()
             attempts += data.size(0)
@@ -72,16 +95,6 @@ def test(model, device, dataset, train=False):
     )
 
 
-def create_dataset(name, net, distributed=True, loader_parameters={}):
-    return datasets.get_dataset(
-        name,
-        build=True,
-        distributed=distributed,
-        transform_parameters=net,
-        loader_parameters=loader_parameters,
-    )
-
-
 def setup(rank, world_size):
     # initialize the process group
     dist.init_process_group("nccl", rank=rank, world_size=world_size)
@@ -89,13 +102,7 @@ def setup(rank, world_size):
 
 def main():
     # Training settings
-    parser = argparse.ArgumentParser(description="PyTorch ImageNet Example")
-    parser.add_argument(
-        "--model", type=str, default="AlexNet", help="which model type to use (default: AlexNet)"
-    )
-    parser.add_argument(
-        "--dataset", type=str, default="ImageNet", help="which dataset to use (default: ImageNet)"
-    )
+    parser = argparse.ArgumentParser(description="PyTorch MNIST Example with DDP")
     parser.add_argument(
         "--batch-size",
         type=int,
@@ -153,11 +160,6 @@ def main():
         flush=True,
     )
 
-    loader_parameters = dict(
-        batch_size=args.batch_size,
-        num_workers=int(os.environ["SLURM_CPUS_PER_TASK"]),
-    )
-
     if world_size > 1:
         setup(rank, world_size)
         if rank == 0:
@@ -167,29 +169,61 @@ def main():
     torch.cuda.set_device(local_rank)
     print(f"host: {gethostname()}, rank: {rank}, local_rank: {local_rank}")
 
-    model_name = args.model
-    dataset_name = args.dataset
-    net = get_model(model_name, build=True, dataset=dataset_name)
-    dataset = create_dataset(
-        dataset_name, net, distributed=world_size > 1, loader_parameters=loader_parameters
-    )
-
+    # Create network
+    net = Net()
     model = net.to(local_rank)
+
+    # Make it a DDP object for distributed processing and training
     ddp_model = DDP(model, device_ids=[local_rank]) if world_size > 1 else model
     optimizer = optim.Adadelta(ddp_model.parameters(), lr=args.lr)
-
     scheduler = StepLR(optimizer, step_size=1, gamma=args.gamma)
 
+    # Create dataset
+    loader_parameters = dict(
+        batch_size=args.batch_size,
+        num_workers=int(os.environ["SLURM_CPUS_PER_TASK"]),
+    )
+    train_kwargs = {"batch_size": args.batch_size}
+    test_kwargs = {"batch_size": args.test_batch_size}
+    if use_cuda:
+        cuda_kwargs = {
+            "num_workers": int(os.environ["SLURM_CPUS_PER_TASK"]),
+            "pin_memory": True,
+            "shuffle": True,
+        }
+        train_kwargs.update(cuda_kwargs)
+        test_kwargs.update(cuda_kwargs)
+
+    transform = transforms.Compose(
+        [transforms.ToTensor(), transforms.Normalize((0.1307,), (0.3081,))]
+    )
+
+    train_data = datasets.MNIST("data", train=True, download=False, transform=transform)
+    test_data = datasets.MNIST("data", train=False, download=False, transform=transform)
+
+    train_sampler = torch.utils.data.distributed.DistributedSampler(
+        train_data, num_replicas=world_size, rank=rank
+    )
+    train_loader = torch.utils.data.DataLoader(
+        train_data,
+        batch_size=args.batch_size,
+        sampler=train_sampler,
+        num_workers=int(os.environ["SLURM_CPUS_PER_TASK"]),
+        pin_memory=True,
+    )
+    test_loader = torch.utils.data.DataLoader(test_data, **test_kwargs)
+
     for epoch in range(1, args.epochs + 1):
-        epoch_time = time.time()
+        if rank == 0:
+            epoch_time = time.time()
         train(args, ddp_model, local_rank, dataset, optimizer, epoch, rank)
         if rank == 0:
             test(ddp_model, local_rank, dataset)
         scheduler.step()
-        epoch_time = time.time() - epoch_time
         if rank == 0:
+            epoch_time = time.time() - epoch_time
             print(
-                f"Epoch {epoch}, Train & Test Time = {epoch_time:.1f} seconds (measured from rank {rank}).\n"
+                f"\nEpoch {epoch}, Train & Test Time = {epoch_time:.1f} seconds (measured from rank {rank}).\n"
             )
 
     if args.save_model and rank == 0:

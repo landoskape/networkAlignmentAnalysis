@@ -6,7 +6,14 @@ from scipy.io import loadmat
 
 class NatPatchDataset(Dataset):
 
-    def __init__(self, N:int, width:int, height:int, border:int=4, fpath:str='../../data/IMAGES.mat'):
+    def __init__(
+        self,
+        N: int,
+        width: int,
+        height: int,
+        border: int = 4,
+        fpath: str = "../../data/IMAGES.mat",
+    ):
         super(NatPatchDataset, self).__init__()
         self.N = N
         self.width = width
@@ -27,7 +34,7 @@ class NatPatchDataset(Dataset):
     def extract_patches_(self):
         # load mat
         X = loadmat(self.fpath)
-        X = X['IMAGES']
+        X = X["IMAGES"]
         img_size = X.shape[0]
         n_img = X.shape[2]
         self.images = torch.zeros((self.N * n_img, self.width, self.height))
@@ -38,6 +45,6 @@ class NatPatchDataset(Dataset):
             for j in range(self.N):
                 x = np.random.randint(self.border, img_size - self.width - self.border)
                 y = np.random.randint(self.border, img_size - self.height - self.border)
-                crop = torch.tensor(img[x:x+self.width, y:y+self.height])
+                crop = torch.tensor(img[x : x + self.width, y : y + self.height])
                 self.images[counter, :, :] = crop - crop.mean()
                 counter += 1

@@ -1,5 +1,7 @@
 # Network Alignment Analysis
 
+[![Code style: black](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/psf/black)
+
 This repository is for a project to understand the structure of neural
 networks with a method called "alignment". It contains modules which make
 doing alignment-related experiments easy and the scripts that run the 
