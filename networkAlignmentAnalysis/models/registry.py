@@ -1,30 +1,31 @@
 from . import models
 
 MODEL_REGISTRY = {
-    'MLP': models.MLP,
-    'CNN2P2': models.CNN2P2,
-    'AlexNet': models.AlexNet,
+    "MLP": models.MLP,
+    "CNN2P2": models.CNN2P2,
+    "AlexNet": models.AlexNet,
 }
 
 DATASET_ARGUMENTS = {
-    'MLP': {
-        'MNIST': dict(input_dim=784, output_dim=10),
-        'CIFAR10': dict(input_dim=3072, output_dim=10),
-        'CIFAR100': dict(input_dim=3072, output_dim=100),
+    "MLP": {
+        "MNIST": dict(input_dim=784, output_dim=10),
+        "CIFAR10": dict(input_dim=3072, output_dim=10),
+        "CIFAR100": dict(input_dim=3072, output_dim=100),
     },
-    'CNN2P2': {
-        'MNIST': dict(in_channels=1, output_dim=10),
-        'CIFAR10': dict(in_channels=3, num_hidden=[4096, 128], output_dim=10),
-        'CIFAR100': dict(in_channels=3, num_hidden=[4096, 128], output_dim=100),
-        'ImageNet': dict(in_channels=3, output_dim=1000),
+    "CNN2P2": {
+        "MNIST": dict(in_channels=1, output_dim=10),
+        "CIFAR10": dict(in_channels=3, num_hidden=[4096, 128], output_dim=10),
+        "CIFAR100": dict(in_channels=3, num_hidden=[4096, 128], output_dim=100),
+        "ImageNet": dict(in_channels=3, output_dim=1000),
     },
-    'AlexNet': {
-        'MNIST': dict(num_classes=10),
-        'CIFAR10': dict(num_classes=10),
-        'CIFAR100': dict(num_classes=100),
-        'ImageNet': dict(num_classes=1000),
+    "AlexNet": {
+        "MNIST": dict(num_classes=10),
+        "CIFAR10": dict(num_classes=10),
+        "CIFAR100": dict(num_classes=100),
+        "ImageNet": dict(num_classes=1000),
     },
 }
+
 
 def get_model_parameters(model_name, dataset):
     """
@@ -36,8 +37,10 @@ def get_model_parameters(model_name, dataset):
     if model_name not in DATASET_ARGUMENTS:
         raise ValueError(f"Model ({model_name}) is not in DATASET_ARGUMENTS lookup dictionary.")
     if dataset not in DATASET_ARGUMENTS[model_name]:
-        raise ValueError(f"Dataset ({dataset}) is not in the DATASET_ARGUMENTS lookup for model ({model_name})")
-    
+        raise ValueError(
+            f"Dataset ({dataset}) is not in the DATASET_ARGUMENTS lookup for model ({model_name})"
+        )
+
     # get dataset specific arguments
     return DATASET_ARGUMENTS[model_name][dataset]
 
@@ -49,8 +52,8 @@ def get_model(model_name, build=False, dataset=None, **kwargs):
     if build=True, uses kwargs to build model and returns a model object
     otherwise just returns the constructor
 
-    if build=True and dataset is not None, will look up dataset specific 
-    keyword arguments from the DATASET_ARGUMENTS dictionary using the 
+    if build=True and dataset is not None, will look up dataset specific
+    keyword arguments from the DATASET_ARGUMENTS dictionary using the
     model_name and dataset as a lookup and add those to any kwargs used
     for building the model
     """
@@ -62,12 +65,12 @@ def get_model(model_name, build=False, dataset=None, **kwargs):
             # get default dataset specific arguments
             dataset_specific_arguments = get_model_parameters(model_name, dataset)
 
-            # for every dataset specific argument, if the key isn't provided in kwargs, 
+            # for every dataset specific argument, if the key isn't provided in kwargs,
             # then update it using the dataset_specific_arguments
             for key, val in dataset_specific_arguments.items():
                 if key not in kwargs:
                     kwargs[key] = val
-        
+
         # build model with arguments
         return model(**kwargs)
 

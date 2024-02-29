@@ -4,10 +4,11 @@ from .alignment_stats import AlignmentStatistics
 from .adversarial_shaping import AdversarialShaping
 
 EXPERIMENT_REGISTRY = {
-    'alignment_comparison': AlignmentComparison,
-    'alignment_stats': AlignmentStatistics,
-    'adversarial_shaping': AdversarialShaping,
+    "alignment_comparison": AlignmentComparison,
+    "alignment_stats": AlignmentStatistics,
+    "adversarial_shaping": AdversarialShaping,
 }
+
 
 def get_experiment(experiment_name, build=False, **kwargs):
     """
@@ -23,6 +24,7 @@ def get_experiment(experiment_name, build=False, **kwargs):
         return experiment(**kwargs)
     return experiment
 
+
 def create_experiment():
     """
     method to create experiment using initial argument parser
@@ -34,12 +36,16 @@ def create_experiment():
     own argument parser in the class definition (but doesn't define the --experiment argument
     which is why the remaining args need to be passed to it directly)
 
-    note: 
+    note:
     add_help=False so adding a --help argument will show a help message for the specific experiment
     that is requested rather than showing a help message for this little parser then blocking the
     rest of the execution. It means using --help requires a valid 'experiment' positional argument.
     """
-    parser = ArgumentParser(description=f"ArgumentParser for loading experiment constructor", add_help=False)
-    parser.add_argument('experiment', type=str, help='a string that defines which experiment to run')
+    parser = ArgumentParser(
+        description=f"ArgumentParser for loading experiment constructor", add_help=False
+    )
+    parser.add_argument(
+        "experiment", type=str, help="a string that defines which experiment to run"
+    )
     exp_args, args = parser.parse_known_args()
     return get_experiment(exp_args.experiment, build=True, args=args)
