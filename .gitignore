@@ -2,6 +2,7 @@
 *.pkl
 slurm-*.out
 *.pt
+jobs/*
 
 # VSCODE
 .vscode/
