@@ -25,13 +25,12 @@ def train(args, model, device, dataset, optimizer, epoch, rank, train=True):
         else:
             dataset.test_sampler.set_epoch(epoch)
     
-    if rank==0 and epoch==1:
-        first_batch_timer = time.time()
+    first_batch_timer = time.time()
 
     model.train()
     for batch_idx, batch in enumerate(dataloader):
         data, target = dataset.unwrap_batch(batch, device=device)
-        if rank==0 and epoch==1 and batch_idx==0:
+        if batch_idx==0:
             print(f"Train-- epoch {epoch}, rank {rank}, first batch loaded in {time.time() - first_batch_timer} seconds.")
         optimizer.zero_grad()
         output = model(data)
@@ -39,8 +38,7 @@ def train(args, model, device, dataset, optimizer, epoch, rank, train=True):
         loss.backward()
         optimizer.step()
         if batch_idx % args.log_interval == 0:
-            if rank==0:
-                print(f"Train Epoch: {epoch} [{batch_idx}/{len(dataloader)} ({100.*batch_idx/len(dataloader):.0f}%)] \t Loss: {loss.item():.6f}")
+            print(f"Train Epoch: {epoch} [{batch_idx}/{len(dataloader)} ({100.*batch_idx/len(dataloader):.0f}%)] \t Loss: {loss.item():.6f}")
             if args.dry_run:
                 break
 
@@ -133,14 +131,12 @@ def main():
     scheduler = StepLR(optimizer, step_size=1, gamma=args.gamma)
 
     for epoch in range(1, args.epochs + 1):
-        if rank == 0:
-            epoch_time = time.time()
+        epoch_time = time.time()
         train(args, ddp_model, local_rank, dataset, optimizer, epoch, rank)
         if rank == 0: test(ddp_model, local_rank, dataset)
         scheduler.step()
-        if rank == 0:
-            epoch_time = time.time() - epoch_time
-            print(f"\nEpoch {epoch}, Train & Test Time = {epoch_time:.1f} seconds (measured from rank {rank}).\n")
+        epoch_time = time.time() - epoch_time
+        print(f"\nEpoch {epoch}, Train & Test Time = {epoch_time:.1f} seconds (measured from rank {rank}).\n")
 
     if args.save_model and rank == 0:
         torch.save(model.state_dict(), f"{model_name}_{dataset_name}.pt")
