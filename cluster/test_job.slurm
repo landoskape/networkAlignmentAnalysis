@@ -3,16 +3,17 @@
 #SBATCH --nodes=1                # node count
 #SBATCH --ntasks-per-node=1      # total number of tasks per node
 #SBATCH --cpus-per-task=1        # cpu-cores per task (>1 if multi-threaded tasks)
-#SBATCH --mem=10M                # total memory per node (4 GB per cpu-core is default)
-#SBATCH --time=00:01:00          # total run time limit (HH:MM:SS)
+#SBATCH --mem=100M                # total memory per node (4 GB per cpu-core is default)
+#SBATCH --time=00:20:00          # total run time limit (HH:MM:SS)
 #SBATCH --mail-type=begin        # send email when job begins
 #SBATCH --mail-type=end          # send email when job ends
 
 source cluster/slurm_settings.txt
 mkdir -p $JOB_FOLDER
-logfile="${JOB_FOLDER}slurm-${SLURM_JOB_ID}.out
+logfile="${JOB_FOLDER}slurm-${SLURM_JOB_ID}.out"
 
 echo "Writing to ${logfile}"
+echo "Testing writing to ${logfile}" >> $logfile
 
 module purge
 module load python
@@ -20,7 +21,9 @@ conda activate networkAlignmentAnalysis
 
 start_time=$(date +%s)
 
-srun python test.py >> $logfile
+python -c "print('hello world')" >> $logfile
+
+python test.py >> $logfile
 
 end_time=$(date +%s)
 
