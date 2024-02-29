@@ -25,12 +25,13 @@ def train(args, model, device, dataset, optimizer, epoch, rank, train=True):
         else:
             dataset.test_sampler.set_epoch(epoch)
     
-    first_batch_timer = time.time()
+    if rank==0:
+        first_batch_timer = time.time()
 
     model.train()
     for batch_idx, batch in enumerate(dataloader):
         data, target = dataset.unwrap_batch(batch, device=device)
-        if batch_idx==0:
+        if rank==0 and batch_idx==0:
             print(f"Train-- epoch {epoch}, rank {rank}, first batch loaded in {time.time() - first_batch_timer} seconds.")
         optimizer.zero_grad()
         output = model(data)
@@ -38,7 +39,8 @@ def train(args, model, device, dataset, optimizer, epoch, rank, train=True):
         loss.backward()
         optimizer.step()
         if batch_idx % args.log_interval == 0:
-            print(f"Train Epoch: {epoch} [{batch_idx}/{len(dataloader)} ({100.*batch_idx/len(dataloader):.0f}%)] \t Loss: {loss.item():.6f}")
+            if rank==0:
+                print(f"Train Epoch: {epoch} [{batch_idx}/{len(dataloader)} ({100.*batch_idx/len(dataloader):.0f}%)] \t Loss: {loss.item():.6f}")
             if args.dry_run:
                 break
 
@@ -136,7 +138,8 @@ def main():
         if rank == 0: test(ddp_model, local_rank, dataset)
         scheduler.step()
         epoch_time = time.time() - epoch_time
-        print(f"\nEpoch {epoch}, Train & Test Time = {epoch_time:.1f} seconds (measured from rank {rank}).\n")
+        if rank==0:
+            print(f"Epoch {epoch}, Train & Test Time = {epoch_time:.1f} seconds (measured from rank {rank}).\n")
 
     if args.save_model and rank == 0:
         torch.save(model.state_dict(), f"{model_name}_{dataset_name}.pt")
