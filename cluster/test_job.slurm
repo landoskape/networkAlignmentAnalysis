@@ -23,7 +23,6 @@ start_time=$(date +%s)
 
 python -c "print('hello world')" >> $logfile
 python test_print.py >> $logfile
-python test.py >> $logfile
 
 end_time=$(date +%s)
 
