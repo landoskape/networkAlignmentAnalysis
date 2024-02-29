@@ -12,7 +12,7 @@ source cluster/slurm_settings.txt
 mkdir -p $JOB_FOLDER
 logfile="${JOB_FOLDER}slurm-${SLURM_JOB_ID}.out
 
-echo "Writing to ${logfile}
+echo "Writing to ${logfile}"
 
 module purge
 module load python
@@ -20,7 +20,7 @@ conda activate networkAlignmentAnalysis
 
 start_time=$(date +%s)
 
-python test.py >> $logfile
+srun python test.py >> $logfile
 
 end_time=$(date +%s)
 
