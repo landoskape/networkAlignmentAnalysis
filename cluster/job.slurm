@@ -26,7 +26,7 @@ start_time=$(date +%s)
 
 # (nvidia-smi --query-gpu=utilization.gpu --format=csv --loop=1 --filename=gpu_utilization.log)
 
-srun python cluster/ddp.py --epochs=200 --dataset=ImageNet --model=AlexNet --log-interval=100
+srun python cluster/ddp.py --epochs=200 --dataset=ImageNet --model=AlexNet --log-interval=100 --save-model
 
 end_time=$(date +%s)
 
