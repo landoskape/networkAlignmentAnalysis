@@ -18,5 +18,5 @@ dependencies:
   - tqdm
   - ipykernel
   - pip:
-    - tensorboard
     - wandb
+    - black

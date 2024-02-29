@@ -1,3 +1,4 @@
+from warnings import warn
 from typing import List
 from contextlib import contextmanager
 from functools import wraps
@@ -5,34 +6,6 @@ import numpy as np
 from scipy.linalg import null_space
 from sklearn.decomposition import IncrementalPCA
 import torch
-from matplotlib import pyplot as plt
-from torchvision.transforms import v2 as transforms
-
-
-# -- deprecation block --
-from warnings import warn
-
-def avg_align_by_layer(full):
-    warn("avg_align_by_layer is deprecated, change to avg_value_by_layer!", DeprecationWarning, stacklevel=2)
-    return avg_value_by_layer(full)
-
-def align_by_layer(full, layer):
-    warn("align_by_layer is deprecated, change to value_by_layer!", DeprecationWarning, stacklevel=2)
-    return value_by_layer(full, layer)
-
-def alignment_conv_look(processed_activity, layer, stride, grid, method='alignment'):
-    warn("alignment_conv_look is deprecated. no longer necessary to use!", DeprecationWarning, stacklevel=2)
-    # Take (NI, C, H, W) (preprocessed) input activity
-    # And compute the similarity for one "look" e.g. one position of the convolutional filter
-    num_images = processed_activity.shape[0]
-    num_elements = processed_activity.shape[1] * layer.kernel_size[0] * layer.kernel_size[1]
-    h_idx = grid[0] + stride[0]*layer.stride[0]
-    w_idx = grid[1] + stride[1]*layer.stride[1]
-    aligned_input = processed_activity[:, :, h_idx, w_idx].reshape(num_images, num_elements)
-    aligned_weights = layer.weight.data.reshape(layer.out_channels, num_elements).detach()
-    stride_variance = torch.mean(torch.var(aligned_input, dim=1))
-    return alignment(aligned_input, aligned_weights, method=method), stride_variance
-# ------------------------
 
 
 # -------------- context managers & decorators --------------
@@ -354,27 +327,6 @@ def alignment(input, weight, method='alignment'):
     rq = torch.sum(torch.matmul(weight, cc) * weight, axis=1) / torch.sum(weight * weight, axis=1)
     # proportion of variance explained by a projection of the input onto each weight
     return rq/torch.trace(cc)
-
-def alignment_linear(activity, layer, method='alignment'):
-    """wrapper for alignment of linear layer, kwargs for compatibility"""
-    return alignment(activity, layer.weight.data, method=method)
-
-def alignment_convolutional(activity, layer, method='alignment'):
-    """
-    wrapper for alignment of convolutional layer (for conv2d)
-
-    measures alignment using each convolutional stride then takes a weighted
-    average across strides by the variance in the input data
-    """
-    layer_prms = get_unfold_params(layer)
-    # unfold data so it's in shape (batch, kernel_dim, num_strides)
-    unfolded_input = torch.nn.functional.unfold(activity, layer.kernel_size, **layer_prms)
-    # now fold stride dimension into batch dimension to measure alignment across all batches and strides together
-    all_input = unfolded_input.transpose(1, 2).contiguous().view(-1, unfolded_input.size(1))
-    # get weights of layer
-    weight = layer.weight.data
-    # return alignment 
-    return alignment(all_input, weight.view(weight.size(0), -1), method=method)
     
 def get_maximum_strides(h_input, w_input, layer):
     h_max = int(np.floor((h_input + 2*layer.padding[0] - layer.dilation[0]*(layer.kernel_size[0] - 1) -1)/layer.stride[0] + 1))
