@@ -38,27 +38,29 @@ if __name__ == "__main__":
         ignore_flag=args.ignore_flag,
     )
 
-    net = get_model(args.network, build=True, **net_args).to(DEVICE)
+    print("hello world")
 
-    loader_parameters = dict(
-        batch_size=1024,
-    )
-    dataset = get_dataset(
-        args.dataset,
-        build=True,
-        transform_parameters=net,
-        loader_parameters=loader_parameters,
-        dataset_parameters=dict(download=True),
-        device=DEVICE,
-    )
+    # net = get_model(args.network, build=True, **net_args).to(DEVICE)
 
-    optim = torch.optim.Adam(net.parameters(), lr=1e-3)
+    # loader_parameters = dict(
+    #     batch_size=1024,
+    # )
+    # dataset = get_dataset(
+    #     args.dataset,
+    #     build=True,
+    #     transform_parameters=net,
+    #     loader_parameters=loader_parameters,
+    #     dataset_parameters=dict(download=True),
+    #     device=DEVICE,
+    # )
 
-    alignment = False if args.no_alignment else True
-    results = train.train([net], [optim], dataset, train_set=False, num_epochs=1, alignment=True)
+    # optim = torch.optim.Adam(net.parameters(), lr=1e-3)
 
-    inputs, labels = net._process_collect_activity(
-        dataset, train_set=False, with_updates=True, use_training_mode=True
-    )
-    betas, eigenvalues, eigenvectors = net.measure_eigenfeatures(inputs)
-    # net.shape_eigenfeatures(net.get_alignment_layer_indices(), eigenvalues, eigenvectors, lambda x: x)
+    # alignment = False if args.no_alignment else True
+    # results = train.train([net], [optim], dataset, train_set=False, num_epochs=1, alignment=True)
+
+    # inputs, labels = net._process_collect_activity(
+    #     dataset, train_set=False, with_updates=True, use_training_mode=True
+    # )
+    # betas, eigenvalues, eigenvectors = net.measure_eigenfeatures(inputs)
+    # # net.shape_eigenfeatures(net.get_alignment_layer_indices(), eigenvalues, eigenvectors, lambda x: x)
