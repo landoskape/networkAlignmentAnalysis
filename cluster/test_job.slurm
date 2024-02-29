@@ -13,8 +13,8 @@ source cluster/slurm_settings.txt
 mkdir -p $JOB_FOLDER
 logfile="${JOB_FOLDER}slurm-${SLURM_JOB_ID}.out"
 
-# echo "Writing to ${logfile}"
-echo "Writing to ${logfile}" >> $logfile
+echo "Writing to ${logfile}"
+echo "Writing in ${logfile}" >> $logfile
 
 module purge
 module load python
@@ -30,4 +30,4 @@ end_time=$(date +%s)
 total_time=$((end_time-start_time))
 echo "Total Time= "$total_time" seconds" >> $logfile
 
-# echo "Finished."
+echo "Finished."
