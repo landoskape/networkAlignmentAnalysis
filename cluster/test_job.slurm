@@ -11,7 +11,7 @@
 
 source cluster/slurm_settings.txt
 mkdir -p $JOB_FOLDER
-logfile="${JOB_FOLDER}slurm-${SLURM_JOB_ID}.out"
+logfile="${JOB_FOLDER}/slurm-${SLURM_JOB_ID}.out"
 
 echo "Writing to ${logfile}"
 echo "Writing in ${logfile}" >> $logfile

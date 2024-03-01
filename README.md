@@ -5,9 +5,9 @@
 This repository is for a project to understand the structure of neural
 networks with a method called "alignment". It contains modules which make
 doing alignment-related experiments easy and the scripts that run the 
-experiments. You'll find a few brief instructions about how to use the
-repository here in the README, but for more information please feel free to
-reach out!
+experiments. The repo is equipped to train pytorch models with DDP on an HPC
+cluster. You'll find a few brief instructions about how to use the repository
+here in the README, but for more information please feel free to reach out!
 
 ## Setup
 The code requires a basic ML python environment. Setup can be done with a
@@ -33,6 +33,10 @@ following script while in the environment and in the top directory:
 ```
 python experiment.py alignment_stats --epochs 1 --replicates 1 --nosave
 ```
+
+For checking HPC cluster related code, there's a MWE 
+[here](cluster/ddp-example/), note that details will differ regarding the HPC
+system etc.
 
 ### Local File Management
 The repository depends on local file management to be established for many of
