@@ -11,6 +11,7 @@ from matplotlib import pyplot as plt
 
 from .. import files
 from ..datasets import get_dataset
+from ..utils import compress_directory
 
 
 class Experiment(ABC):
@@ -260,6 +261,10 @@ class Experiment(ABC):
                     f"Requested argument {ak}={vars(self.args)[ak]} differs from saved, which is: {ak}={prms[ak]}. Using saved..."
                 )
                 setattr(self.args, ak, prms[ak])
+
+    def save_repo(self):
+        """Method for saving a copy of the code repo at the time this experiment was run"""
+        compress_directory(self.get_dir() / "frozen_repo.zip")
 
     def save_experiment(self, results):
         """Method for saving experiment parameters and results to file"""

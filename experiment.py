@@ -24,6 +24,9 @@ if __name__ == "__main__":
         if not exp.args.nosave:
             exp.save_experiment(results)
 
+            # Save copy of repo
+            exp.save_repo()
+
             # Save networks
             if exp.args.save_networks:
                 exp.save_networks(nets)
