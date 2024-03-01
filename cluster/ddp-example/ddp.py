@@ -46,9 +46,8 @@ class Net(nn.Module):
 
 def train(args, model, device, dataloader, datasampler, optimizer, epoch, rank):
     """basic training script"""
-    datasampler.set_epoch(
-        epoch
-    )  # required for different shuffle order of examples in dataset each epoch
+    # required for different shuffle order of examples in dataset each epoch
+    datasampler.set_epoch(epoch)
 
     if rank == 0 and epoch == 1:
         first_batch_timer = time.time()
@@ -103,6 +102,12 @@ def setup(rank, world_size):
 def main():
     # Training settings
     parser = argparse.ArgumentParser(description="PyTorch MNIST Example with DDP")
+    parser.add_argument(
+        "--job-folder",
+        type=str,
+        default=".",
+        help="job folder for storing data",
+    )
     parser.add_argument(
         "--batch-size",
         type=int,
@@ -178,28 +183,12 @@ def main():
     optimizer = optim.Adadelta(ddp_model.parameters(), lr=args.lr)
     scheduler = StepLR(optimizer, step_size=1, gamma=args.gamma)
 
-    # Create dataset
-    loader_parameters = dict(
-        batch_size=args.batch_size,
-        num_workers=int(os.environ["SLURM_CPUS_PER_TASK"]),
-    )
-    train_kwargs = {"batch_size": args.batch_size}
-    test_kwargs = {"batch_size": args.test_batch_size}
-    if use_cuda:
-        cuda_kwargs = {
-            "num_workers": int(os.environ["SLURM_CPUS_PER_TASK"]),
-            "pin_memory": True,
-            "shuffle": True,
-        }
-        train_kwargs.update(cuda_kwargs)
-        test_kwargs.update(cuda_kwargs)
-
     transform = transforms.Compose(
         [transforms.ToTensor(), transforms.Normalize((0.1307,), (0.3081,))]
     )
 
-    train_data = datasets.MNIST("data", train=True, download=False, transform=transform)
-    test_data = datasets.MNIST("data", train=False, download=False, transform=transform)
+    train_data = datasets.MNIST("data", train=True, download=True, transform=transform)
+    test_data = datasets.MNIST("data", train=False, download=True, transform=transform)
 
     train_sampler = torch.utils.data.distributed.DistributedSampler(
         train_data, num_replicas=world_size, rank=rank
@@ -211,14 +200,19 @@ def main():
         num_workers=int(os.environ["SLURM_CPUS_PER_TASK"]),
         pin_memory=True,
     )
-    test_loader = torch.utils.data.DataLoader(test_data, **test_kwargs)
+    test_loader = torch.utils.data.DataLoader(
+        test_data,
+        batch_size=args.batch_size,
+        num_workers=int(os.environ["SLURM_CPUS_PER_TASK"]),
+        pin_memory=True,
+    )
 
     for epoch in range(1, args.epochs + 1):
         if rank == 0:
             epoch_time = time.time()
-        train(args, ddp_model, local_rank, dataset, optimizer, epoch, rank)
+        train(args, ddp_model, local_rank, train_loader, train_sampler, optimizer, epoch, rank)
         if rank == 0:
-            test(ddp_model, local_rank, dataset)
+            test(ddp_model, local_rank, test_loader)
         scheduler.step()
         if rank == 0:
             epoch_time = time.time() - epoch_time
@@ -227,7 +221,7 @@ def main():
             )
 
     if args.save_model and rank == 0:
-        torch.save(model.state_dict(), f"{model_name}_{dataset_name}.pt")
+        torch.save(model.state_dict(), "test_model_ddp.pt")
 
     if world_size > 1:
         dist.destroy_process_group()
