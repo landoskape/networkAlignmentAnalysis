@@ -4,6 +4,7 @@ https://github.com/PrincetonUniversity/multi_gpu_training/blob/main/02_pytorch_d
 """
 
 import argparse
+import shutil
 import torch
 from torch import nn
 import torch.nn.functional as F
@@ -154,6 +155,7 @@ def main():
     args = parser.parse_args()
 
     print("job folder:", args.job_folder)
+    data_folder = os.path.join(args.job_folder, "data")
 
     torch.manual_seed(args.seed)
 
@@ -162,7 +164,7 @@ def main():
     gpus_per_node = int(os.environ["SLURM_GPUS_ON_NODE"])
     print("gpus_per_node:", gpus_per_node)
     print("device_count:", torch.cuda.device_count())
-    
+
     assert gpus_per_node == torch.cuda.device_count()
     print(
         f"Hello from rank {rank} of {world_size} on {gethostname()} where there are"
@@ -192,12 +194,8 @@ def main():
         [transforms.ToTensor(), transforms.Normalize((0.1307,), (0.3081,))]
     )
 
-    train_data = datasets.MNIST(
-        os.path.join(args.job_folder, "data"), train=True, download=True, transform=transform
-    )
-    test_data = datasets.MNIST(
-        os.path.join(args.job_folder, "data"), train=False, download=True, transform=transform
-    )
+    train_data = datasets.MNIST(data_folder, train=True, download=True, transform=transform)
+    test_data = datasets.MNIST(data_folder, train=False, download=True, transform=transform)
 
     train_sampler = torch.utils.data.distributed.DistributedSampler(
         train_data, num_replicas=world_size, rank=rank
@@ -234,6 +232,9 @@ def main():
 
     if world_size > 1:
         dist.destroy_process_group()
+
+    # clear locally downloaded MNIST data
+    shutil.rmtree(data_folder)
 
 
 if __name__ == "__main__":

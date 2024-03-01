@@ -10,7 +10,6 @@
 #SBATCH --mail-type=begin        # send email when job begins
 #SBATCH --mail-type=end          # send email when job ends
 #SBATCH --account=kempner_bsabatini_lab   # the account needs to be specified for the kempner partition
-# #SBATCH --output=/dev/null       # don't make an output file since we're doing it directly
 
 # we need to define the job name directly since it isn't a slurm environment variable
 JOB_NAME="DDP-Example" 
