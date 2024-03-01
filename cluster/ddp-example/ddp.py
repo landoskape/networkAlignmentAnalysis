@@ -160,6 +160,8 @@ def main():
     world_size = int(os.environ["WORLD_SIZE"])
     rank = int(os.environ["SLURM_PROCID"])
     gpus_per_node = int(os.environ["SLURM_GPUS_ON_NODE"])
+    print("gpus_per_node:", gpus_per_node)
+    print("device_count:", torch.cuda.device_count())
     assert gpus_per_node == torch.cuda.device_count()
     print(
         f"Hello from rank {rank} of {world_size} on {gethostname()} where there are"
