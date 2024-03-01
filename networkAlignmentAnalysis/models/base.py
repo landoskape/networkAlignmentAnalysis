@@ -18,6 +18,30 @@ from ..utils import alignment
 
 
 class AttributeReference:
+    """
+    Simple class designed to be a reference to the parent class as an attribute.
+
+    This is required for compatibility with using DDP for training pytorch modules,
+    since we'll sometimes train DDP models and sometimes not, we want the code to
+    work the same way. However, if you instantiate a DPP model from a network:
+
+    net = AlignmentNetwork()
+    ddp_net = DDP(net)
+
+    Then the AlignmentNetwork methods will only be accessible in ddp_net.module.__. Therefore,
+    if we have a system whereby the AlignmentNetwork methods can also be accessed in
+    net.module.__, then the code can be the same regardless of whether we're using DDP or not.
+
+    Usage
+    -----
+        net = AlignmentNetwork() (or any object instantiation)
+        net.module = AttributeReference(net)
+        ---or---
+        class class_name:
+            def __init__(self, *args, **kwargs):
+                self.module = AttributeReference(self)
+    """
+
     def __init__(self, parent):
         self.parent = parent
 
@@ -65,14 +89,11 @@ class AlignmentNetwork(nn.Module, ABC):
         self.layers = nn.ModuleList()  # a list of all modules in the forward pass
         self.metaparameters = []  # list of dictionaries containing metaparameters for each layer
         self.hidden = []  # list of tensors containing hidden activations
-        self.ignore_flag = kwargs.pop(
-            "ignore_flag", False
-        )  # setting for whether to ignore flagged layers
+        self.ignore_flag = kwargs.pop("ignore_flag", False)  # whether to ignore flagged layers
         self.initialize(**kwargs)  # initialize the architecture using child class method
         if reference:
-            self.module = AttributeReference(
-                self
-            )  # create reference to self in "model" attribute for compatibility with DDP
+            # create reference to self in "model" attribute for compatibility with DDP
+            self.module = AttributeReference(self)
 
     @abstractmethod
     def initialize(self, **kwargs):

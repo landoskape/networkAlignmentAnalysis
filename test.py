@@ -34,9 +34,7 @@ if __name__ == "__main__":
     print("using device:", DEVICE, "DeviceCount:", torch.cuda.device_count())
 
     # get network
-    net_args = dict(
-        ignore_flag=args.ignore_flag,
-    )
+    net_args = dict(ignore_flag=args.ignore_flag)
 
     net = get_model(args.network, build=True, **net_args).to(DEVICE)
 
