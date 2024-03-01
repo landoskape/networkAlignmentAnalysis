@@ -16,7 +16,7 @@ JOB_NAME="DDP-Example"
 
 # this text file has some settings in it (like the standard job directory)
 source cluster/slurm_settings.txt
-JOB_DIR=${JOB_FOLDER}${JOB_NAME}-${SLURM_JOB_ID} # make a specific directory for this particular job
+JOB_DIR=${JOB_FOLDER}/${JOB_NAME}-${SLURM_JOB_ID} # make a specific directory for this particular job
 mkdir -p $JOB_DIR
 
 # define a unique log file in the right place
