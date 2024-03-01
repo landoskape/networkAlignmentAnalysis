@@ -153,6 +153,8 @@ def main():
     )
     args = parser.parse_args()
 
+    print("job folder:", args.job_folder)
+
     torch.manual_seed(args.seed)
 
     world_size = int(os.environ["WORLD_SIZE"])
@@ -187,8 +189,12 @@ def main():
         [transforms.ToTensor(), transforms.Normalize((0.1307,), (0.3081,))]
     )
 
-    train_data = datasets.MNIST("data", train=True, download=True, transform=transform)
-    test_data = datasets.MNIST("data", train=False, download=True, transform=transform)
+    train_data = datasets.MNIST(
+        os.path.join(args.job_folder, "data"), train=True, download=True, transform=transform
+    )
+    test_data = datasets.MNIST(
+        os.path.join(args.job_folder, "data"), train=False, download=True, transform=transform
+    )
 
     train_sampler = torch.utils.data.distributed.DistributedSampler(
         train_data, num_replicas=world_size, rank=rank
@@ -221,7 +227,7 @@ def main():
             )
 
     if args.save_model and rank == 0:
-        torch.save(model.state_dict(), "test_model_ddp.pt")
+        torch.save(model.state_dict(), os.path.join(args.job_folder, "test_model_ddp.pt"))
 
     if world_size > 1:
         dist.destroy_process_group()
