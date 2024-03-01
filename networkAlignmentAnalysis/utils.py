@@ -1,4 +1,6 @@
 from warnings import warn
+import zipfile
+import os
 from typing import List
 from contextlib import contextmanager
 from functools import wraps
@@ -6,6 +8,7 @@ import numpy as np
 from scipy.linalg import null_space
 from sklearn.decomposition import IncrementalPCA
 import torch
+from gitignore_parser import parse_gitignore
 
 
 # -------------- context managers & decorators --------------
@@ -592,3 +595,44 @@ def load_checkpoints(nets, optimizers, device, path):
         [net.to(device) for net in nets]
 
     return nets, optimizers, checkpoint
+
+
+def match_git(path):
+    """simple method for determining if a path is a git-related file or directory"""
+    if ".git" in path:
+        return True
+    return False
+
+
+def compress_directory(output_path, directory_path=None):
+    """send an entire directory to a zip file at output_path, using .gitignore and ignoring .git files"""
+    if directory_path is None:
+        # relative to utils -- this is the main repo path
+        directory_path = os.path.dirname(os.path.abspath(__file__)) + "/.."
+
+    # Parse .gitignore file
+    gitignore_path = os.path.join(directory_path, ".gitignore")
+    matches = parse_gitignore(gitignore_path)
+
+    # Prepare list for copying files
+    files_to_copy = []
+    archive_names = []
+    for dirpath, dirnames, files in os.walk(directory_path):
+        if matches(dirpath) or match_git(dirpath):
+            # clear any files from within this path
+            dirnames[:] = []
+        else:
+            # Filter files based on .gitignore rules (and don't save any .git files)
+            keep_files = [f for f in files if not matches(f) and not match_git(f)]
+            # Make full path
+            full_files = [os.path.join(dirpath, f) for f in keep_files]
+            for file in full_files:
+                # Add file to the copy list
+                files_to_copy.append(file)
+                archive_names.append(os.path.relpath(file, directory_path))
+
+    # create zip file
+    with zipfile.ZipFile(output_path, "w", zipfile.ZIP_DEFLATED) as zipf:
+        # go through directory
+        for file, name in zip(files_to_copy, archive_names):
+            zipf.write(file, arcname=name)
