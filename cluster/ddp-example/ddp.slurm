@@ -47,7 +47,7 @@ start_time=$(date +%s)
 # this is the command that initiates the processes
 # srun will send each command to each task on each node for a total of WORLD_SIZE tasks
 # (in this case the script it runs is python cluster/ddp.py)
-srun python cluster/ddp.py --epochs=50 --job-folder=${JOB_DIR} >> $logfile
+srun python cluster/ddp-example/ddp.py --epochs=50 --job-folder=${JOB_DIR} >> $logfile
 
 # record the end time
 end_time=$(date +%s)
