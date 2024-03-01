@@ -12,7 +12,7 @@
 #SBATCH --mail-type=end                 # send email when job ends
 
 # we need to define the job name directly since it isn't a slurm environment variable
-JOB_NAME="DDP-Example" 
+JOB_NAME="alignment_stats" 
 
 # this text file has some settings in it (like the standard job directory)
 source cluster/slurm_settings.txt
@@ -21,7 +21,7 @@ mkdir -p $JOB_DIR
 
 # define a unique log file in the right place
 logfile="${JOB_DIR}/slurm-${SLURM_JOB_ID}.out"
-echo $logfile
+echo "Writing to ${logfile}"
 
 # load python and activate our conda environment
 module purge
