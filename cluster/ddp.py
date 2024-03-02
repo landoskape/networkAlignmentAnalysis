@@ -111,14 +111,17 @@ def main():
         help="number of epochs to train (default: 14)",
     )
     parser.add_argument(
-        "--lr", type=float, default=1e-2, metavar="LR", help="learning rate (default: 1.0)"
+        "--lr", type=float, default=0.01, metavar="LR", help="learning rate (default: 0.01)"
+    )
+    parser.add_argument(
+        "--wd", type=float, default=0.0001, metavar="LR", help="weight decay (default: 0.0001)"
     )
     parser.add_argument(
         "--gamma",
         type=float,
-        default=0.999,
+        default=0.95,
         metavar="M",
-        help="Learning rate step gamma (default: 0.999)",
+        help="Learning rate step gamma (default: 0.95)",
     )
     parser.add_argument(
         "--no-cuda", action="store_true", default=False, help="disables CUDA training"
@@ -176,7 +179,7 @@ def main():
 
     model = net.to(local_rank)
     ddp_model = DDP(model, device_ids=[local_rank]) if world_size > 1 else model
-    optimizer = optim.Adam(ddp_model.parameters(), lr=args.lr, weight_decay=5e-4)
+    optimizer = optim.SGD(ddp_model.parameters(), lr=args.lr, weight_decay=args.wd)
 
     scheduler = StepLR(optimizer, step_size=1, gamma=args.gamma)
 
@@ -185,7 +188,7 @@ def main():
         train(args, ddp_model, local_rank, dataset, optimizer, epoch, rank)
         if rank == 0:
             test(ddp_model, local_rank, dataset)
-        scheduler.step()
+        # scheduler.step()
         epoch_time = time.time() - epoch_time
         if rank == 0:
             print(
