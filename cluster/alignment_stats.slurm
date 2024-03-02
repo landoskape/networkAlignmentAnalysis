@@ -32,7 +32,7 @@ conda activate networkAlignmentAnalysis
 start_time=$(date +%s)
 
 # this is the command that initiates the processes
-python experiment.py alignment_stats --network AlexNet --dataset CIFAR100 --use_wandb --epochs 200 >> $logfile
+python experiment.py alignment_stats --network CNN2P2 --dataset CIFAR100 --use_wandb --epochs 200 >> $logfile
 
 # record the end time
 end_time=$(date +%s)
