@@ -18,7 +18,6 @@ echo "Writing in ${logfile}" >> $logfile
 
 module purge
 module load python
-conda activate networkAlignmentAnalysis
 
 start_time=$(date +%s)
 
