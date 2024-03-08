@@ -128,9 +128,7 @@ class argsSparseNet(object):
         opts["r_learning_rate"] = 1e-2  # learning rate for ISTA (activity on each image)
         opts["reg"] = 5e-3  # LSTM hidden size
 
-        assert (
-            userOpts.keys() <= opts.keys()
-        ), f"userOpts contains the following invalid keys: {set(userOpts.keys()).difference(opts.keys())}"
+        assert userOpts.keys() <= opts.keys(), f"userOpts contains the following invalid keys: {set(userOpts.keys()).difference(opts.keys())}"
         opts.update(userOpts)
 
         for key in opts.keys():
@@ -154,9 +152,7 @@ def similarity(inputActivity, weights):
     # computes the rayleigh quotient R(cc, w) between the weight of each postsynaptic neuron and the correlation matrix of the inputs
     # then divides by n, because sum(eigenvalue)=sum(trace)=n, so this bounds the outputs between 0 and 1
     # -- note: this breaks if an input element has a standard deviation of 0! so we're just ignoring those values --
-    inputActivity = (
-        torch.tensor(inputActivity) if not torch.is_tensor(inputActivity) else inputActivity
-    )
+    inputActivity = torch.tensor(inputActivity) if not torch.is_tensor(inputActivity) else inputActivity
     weights = torch.tensor(weights) if not torch.is_tensor(weights) else weights
     idxMute = torch.where(torch.std(inputActivity, axis=0) == 0)[0]
     b, n = inputActivity.shape
@@ -164,9 +160,7 @@ def similarity(inputActivity, weights):
     cc = torch.corrcoef(inputActivity.T)
     cc[idxMute, :] = 0
     cc[:, idxMute] = 0
-    rq = torch.sum(torch.matmul(weights, cc) * weights, axis=1) / torch.sum(
-        weights * weights, axis=1
-    )
+    rq = torch.sum(torch.matmul(weights, cc) * weights, axis=1) / torch.sum(weights * weights, axis=1)
     return rq / n
 
 

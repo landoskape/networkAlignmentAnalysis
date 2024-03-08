@@ -99,9 +99,7 @@ def check_metaparameters(metaparameters, throw=True):
     """validate whether metaparameters is a dictionary containing the required keys for an alignment network"""
     if not all([required in metaparameters for required in REGISTRY_REQUIREMENTS]):
         if throw:
-            raise ValueError(
-                f"metaparameters are missing required keys, it requires all of the following: {REGISTRY_REQUIREMENTS}"
-            )
+            raise ValueError(f"metaparameters are missing required keys, it requires all of the following: {REGISTRY_REQUIREMENTS}")
         return False
     return True
 

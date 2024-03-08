@@ -60,9 +60,7 @@ def parse_args() -> argparse.Namespace:
         default=0,
         help="number of training steps to save checkpoint after",
     )
-    parser.add_argument(
-        "--checkpoint_dir", type=str, default="checkpoints", help="directory to save checkpoints"
-    )
+    parser.add_argument("--checkpoint_dir", type=str, default="checkpoints", help="directory to save checkpoints")
 
     return parser.parse_args()
 
@@ -80,9 +78,7 @@ def main():
     dataset = datasets.ImageFolder(args.dataset, transform=preprocess)
     logging.info(f"Data loaded, Found {len(dataset.classes)} classes, {len(dataset)} images")
     num_classes = len(dataset.classes)
-    loader = DataLoader(
-        dataset, batch_size=args.batch_size, shuffle=True, num_workers=args.num_workers
-    )
+    loader = DataLoader(dataset, batch_size=args.batch_size, shuffle=True, num_workers=args.num_workers)
     model = torchvision.models.get_model(args.model, num_classes=num_classes)
     optimizer = torch.optim.SGD
     lighting_model = LightningModel(model, optimizer, args.lr)

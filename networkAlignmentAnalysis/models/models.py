@@ -22,14 +22,10 @@ class MLP(AlignmentNetwork):
         layerHidden = []
         for ii in range(len(hidden_widths) - 1):
             hwin, hwout = hidden_widths[ii], hidden_widths[ii + 1]
-            layerHidden.append(
-                nn.Sequential(nn.Dropout(p=dropout), nn.Linear(hwin, hwout), nn.ReLU())
-            )
+            layerHidden.append(nn.Sequential(nn.Dropout(p=dropout), nn.Linear(hwin, hwout), nn.ReLU()))
 
         # Output layer is alwyays Dropout then Linear
-        layerOutput = nn.Sequential(
-            nn.Dropout(p=dropout), nn.Linear(hidden_widths[-1], output_dim)
-        )
+        layerOutput = nn.Sequential(nn.Dropout(p=dropout), nn.Linear(hidden_widths[-1], output_dim))
 
         # Register layers in order
         self.register_layer(layerInput, **default_metaprms_linear(0))
@@ -57,9 +53,7 @@ class MLP(AlignmentNetwork):
             },
         }
         if dataset not in params:
-            raise ValueError(
-                f"Dataset ({dataset}) is not in params dictionary: {[k for k in params]}"
-            )
+            raise ValueError(f"Dataset ({dataset}) is not in params dictionary: {[k for k in params]}")
         return params[dataset]
 
 
@@ -88,12 +82,8 @@ class CNN2P2(AlignmentNetwork):
             (channels, kernel_size, stride, padding),
             ("channels", "kernel_size", "stride", "padding"),
         ):
-            assert (
-                len(val) == 2
-            ), f"{name} must be 2 elements describing the parameter for each of two convolutional layers"
-        assert (
-            len(num_hidden) == 2
-        ), "num_hidden must be 2 elements describing the number of hidden for each of two feedforward layers"
+            assert len(val) == 2, f"{name} must be 2 elements describing the parameter for each of two convolutional layers"
+        assert len(num_hidden) == 2, "num_hidden must be 2 elements describing the number of hidden for each of two feedforward layers"
 
         # create layers
         layer1 = nn.Sequential(
@@ -157,9 +147,7 @@ class CNN2P2(AlignmentNetwork):
             },
         }
         if dataset not in params:
-            raise ValueError(
-                f"Dataset ({dataset}) is not in params dictionary: {[k for k in params]}"
-            )
+            raise ValueError(f"Dataset ({dataset}) is not in params dictionary: {[k for k in params]}")
         return params[dataset]
 
 
@@ -277,7 +265,5 @@ class AlexNet(AlignmentNetwork):
         }
 
         if dataset not in params:
-            raise ValueError(
-                f"Dataset ({dataset}) is not in params dictionary: {[k for k in params]}"
-            )
+            raise ValueError(f"Dataset ({dataset}) is not in params dictionary: {[k for k in params]}")
         return params[dataset]

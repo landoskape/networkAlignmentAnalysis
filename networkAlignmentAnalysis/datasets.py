@@ -50,9 +50,7 @@ class DataSet(ABC):
         self.check_properties()
 
         # define device for dataloading
-        self.device = (
-            device if device is not None else ("cuda" if torch.cuda.is_available() else "cpu")
-        )
+        self.device = device if device is not None else ("cuda" if torch.cuda.is_available() else "cpu")
         self.distributed = distributed
 
         # define extra transform (should be a callable method or None) for any transformations that
@@ -65,9 +63,7 @@ class DataSet(ABC):
         self.make_transform(**transform_parameters)
 
         # define the dataloader parameters
-        self.dataloader_parameters = default_loader_parameters(
-            distributed, **loader_parameters
-        )  # get dataloader parameters
+        self.dataloader_parameters = default_loader_parameters(distributed, **loader_parameters)  # get dataloader parameters
 
         # load the dataset and create the dataloaders
         self.dataset_parameters = dataset_parameters
@@ -123,12 +119,8 @@ class DataSet(ABC):
         self.test_dataset = self.dataset_constructor(**self.dataset_kwargs(train=False, **kwargs))
         self.train_sampler = DistributedSampler(self.train_dataset) if self.distributed else None
         self.test_sampler = DistributedSampler(self.test_dataset) if self.distributed else None
-        self.train_loader = torch.utils.data.DataLoader(
-            self.train_dataset, sampler=self.train_sampler, **self.dataloader_parameters
-        )
-        self.test_loader = torch.utils.data.DataLoader(
-            self.test_dataset, sampler=self.test_sampler, **self.dataloader_parameters
-        )
+        self.train_loader = torch.utils.data.DataLoader(self.train_dataset, sampler=self.train_sampler, **self.dataloader_parameters)
+        self.test_loader = torch.utils.data.DataLoader(self.test_dataset, sampler=self.test_sampler, **self.dataloader_parameters)
 
     def unwrap_batch(self, batch, device=None):
         """simple method for unwrapping batch for simple training loops"""
@@ -156,9 +148,7 @@ class DataSet(ABC):
             use_transforms.append(transforms.CenterCrop(center_crop))
 
         # Normalize inputs to canonical distribution
-        use_transforms.append(
-            transforms.Normalize((self.dist_params["mean"]), (self.dist_params["std"]))
-        )
+        use_transforms.append(transforms.Normalize((self.dist_params["mean"]), (self.dist_params["std"])))
 
         # extra transforms depending on network
         if resize:
@@ -319,9 +309,7 @@ if __name__ == "__main__":
     from argparse import ArgumentParser
 
     def get_args(args=None):
-        parser = ArgumentParser(
-            description="simple program for downloading a dataset to the local file location"
-        )
+        parser = ArgumentParser(description="simple program for downloading a dataset to the local file location")
         parser.add_argument("--dataset", type=str, default="MNIST")
         return parser.parse_args(args=args)
 

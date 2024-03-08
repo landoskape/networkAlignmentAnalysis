@@ -41,11 +41,7 @@ def create_experiment():
     that is requested rather than showing a help message for this little parser then blocking the
     rest of the execution. It means using --help requires a valid 'experiment' positional argument.
     """
-    parser = ArgumentParser(
-        description=f"ArgumentParser for loading experiment constructor", add_help=False
-    )
-    parser.add_argument(
-        "experiment", type=str, help="a string that defines which experiment to run"
-    )
+    parser = ArgumentParser(description=f"ArgumentParser for loading experiment constructor", add_help=False)
+    parser.add_argument("experiment", type=str, help="a string that defines which experiment to run")
     exp_args, args = parser.parse_known_args()
     return get_experiment(exp_args.experiment, build=True, args=args)

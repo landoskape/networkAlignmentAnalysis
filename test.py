@@ -28,9 +28,7 @@ def get_args(args=None):
 if __name__ == "__main__":
     args = get_args()
 
-    DEVICE = (
-        args.device if args.device is not None else "cuda" if torch.cuda.is_available() else "cpu"
-    )
+    DEVICE = args.device if args.device is not None else "cuda" if torch.cuda.is_available() else "cpu"
     print("using device:", DEVICE, "DeviceCount:", torch.cuda.device_count())
 
     # get network
@@ -55,8 +53,6 @@ if __name__ == "__main__":
     alignment = False if args.no_alignment else True
     results = train.train([net], [optim], dataset, train_set=False, num_epochs=1, alignment=True)
 
-    inputs, labels = net._process_collect_activity(
-        dataset, train_set=False, with_updates=True, use_training_mode=True
-    )
+    inputs, labels = net._process_collect_activity(dataset, train_set=False, with_updates=True, use_training_mode=True)
     betas, eigenvalues, eigenvectors = net.measure_eigenfeatures(inputs)
     # net.shape_eigenfeatures(net.get_alignment_layer_indices(), eigenvalues, eigenvectors, lambda x: x)

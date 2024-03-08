@@ -48,9 +48,7 @@ def train(args, model, device, dataset, optimizer, epoch, rank, run, train=True)
     for batch_idx, batch in enumerate(dataloader):
         data, target = dataset.unwrap_batch(batch, device=device)
         if rank == 0 and batch_idx == 0:
-            print(
-                f"Train-- epoch {epoch}, rank {rank}, first batch loaded in {time.time() - first_batch_timer} seconds."
-            )
+            print(f"Train-- epoch {epoch}, rank {rank}, first batch loaded in {time.time() - first_batch_timer} seconds.")
         optimizer.zero_grad()
         output = model(data)
         loss = dataset.measure_loss(output, target)
@@ -58,9 +56,7 @@ def train(args, model, device, dataset, optimizer, epoch, rank, run, train=True)
         optimizer.step()
         if batch_idx % args.log_interval == 0:
             if rank == 0:
-                print(
-                    f"Train Epoch: {epoch} [{batch_idx}/{len(dataloader)} ({100.*batch_idx/len(dataloader):.0f}%)] \t Loss: {loss.item():.6f}"
-                )
+                print(f"Train Epoch: {epoch} [{batch_idx}/{len(dataloader)} ({100.*batch_idx/len(dataloader):.0f}%)] \t Loss: {loss.item():.6f}")
                 if run is not None:
                     run.log(dict(epoch=epoch, batch_idx=batch_idx, train_loss=loss.item()))
             if args.dry_run:
@@ -84,9 +80,7 @@ def test(model, device, dataset, run, train=False):
 
     test_loss /= attempts
 
-    print(
-        f"\nTest set: Average loss: {test_loss:.4f}, Accuracy: {correct}/{attempts} ({100.*correct/attempts:.0f}%)\n"
-    )
+    print(f"\nTest set: Average loss: {test_loss:.4f}, Accuracy: {correct}/{attempts} ({100.*correct/attempts:.0f}%)\n")
 
     if run is not None:
         run.log(dict(test_loss=test_loss, test_accuracy=100.0 * correct / attempts))
@@ -142,12 +136,8 @@ def main():
         metavar="N",
         help="number of epochs to train (default: 14)",
     )
-    parser.add_argument(
-        "--lr", type=float, default=1.0, metavar="LR", help="learning rate (default: 1.0)"
-    )
-    parser.add_argument(
-        "--wd", type=float, default=0.0, metavar="WD", help="weight decay (default: 0.0)"
-    )
+    parser.add_argument("--lr", type=float, default=1.0, metavar="LR", help="learning rate (default: 1.0)")
+    parser.add_argument("--wd", type=float, default=0.0, metavar="WD", help="weight decay (default: 0.0)")
     parser.add_argument(
         "--gamma",
         type=float,
@@ -155,15 +145,9 @@ def main():
         metavar="M",
         help="Learning rate step gamma (default: 0.99)",
     )
-    parser.add_argument(
-        "--no-cuda", action="store_true", default=False, help="disables CUDA training"
-    )
-    parser.add_argument(
-        "--dry-run", action="store_true", default=False, help="quickly check a single pass"
-    )
-    parser.add_argument(
-        "--seed", type=int, default=1, metavar="S", help="random seed (default: 1)"
-    )
+    parser.add_argument("--no-cuda", action="store_true", default=False, help="disables CUDA training")
+    parser.add_argument("--dry-run", action="store_true", default=False, help="quickly check a single pass")
+    parser.add_argument("--seed", type=int, default=1, metavar="S", help="random seed (default: 1)")
     parser.add_argument(
         "--log-interval",
         type=int,
@@ -171,9 +155,7 @@ def main():
         metavar="N",
         help="how many batches to wait before logging training status",
     )
-    parser.add_argument(
-        "--save-model", action="store_true", default=False, help="For Saving the current Model"
-    )
+    parser.add_argument("--save-model", action="store_true", default=False, help="For Saving the current Model")
     args = parser.parse_args()
 
     run = configure_wandb(args)
@@ -185,8 +167,7 @@ def main():
     gpus_per_node = int(os.environ["SLURM_GPUS_ON_NODE"])
     assert gpus_per_node == torch.cuda.device_count()
     print(
-        f"Hello from rank {rank} of {world_size} on {gethostname()} where there are"
-        f" {gpus_per_node} allocated GPUs per node.",
+        f"Hello from rank {rank} of {world_size} on {gethostname()} where there are" f" {gpus_per_node} allocated GPUs per node.",
         flush=True,
     )
 
@@ -207,9 +188,7 @@ def main():
     model_name = "AlexNet"
     dataset_name = "ImageNet"
     net = get_model(model_name, build=True, dataset=dataset_name)
-    dataset = create_dataset(
-        dataset_name, net, distributed=world_size > 1, loader_parameters=loader_parameters
-    )
+    dataset = create_dataset(dataset_name, net, distributed=world_size > 1, loader_parameters=loader_parameters)
 
     model = net.to(local_rank)
     ddp_model = DDP(model, device_ids=[local_rank]) if world_size > 1 else model
@@ -225,9 +204,7 @@ def main():
         scheduler.step()
         epoch_time = time.time() - epoch_time
         if rank == 0:
-            print(
-                f"Epoch {epoch}, Train & Test Time = {epoch_time:.1f} seconds (measured from rank {rank}).\n"
-            )
+            print(f"Epoch {epoch}, Train & Test Time = {epoch_time:.1f} seconds (measured from rank {rank}).\n")
 
     if args.save_model and rank == 0:
         torch.save(model.state_dict(), os.path.join(args.job_folder, "alexnet_imagenet.pt"))

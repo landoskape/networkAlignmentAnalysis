@@ -57,9 +57,7 @@ def train(args, model, device, dataloader, datasampler, optimizer, epoch, rank):
     for batch_idx, (data, target) in enumerate(dataloader):
         data, target = data.to(device), target.to(device)
         if rank == 0 and epoch == 1 and batch_idx == 0:
-            print(
-                f"Train-- epoch {epoch}, rank {rank}, first batch loaded in {time.time() - first_batch_timer} seconds."
-            )
+            print(f"Train-- epoch {epoch}, rank {rank}, first batch loaded in {time.time() - first_batch_timer} seconds.")
         optimizer.zero_grad()
         output = model(data)
         loss = F.nll_loss(output, target)
@@ -67,9 +65,7 @@ def train(args, model, device, dataloader, datasampler, optimizer, epoch, rank):
         optimizer.step()
         if batch_idx % args.log_interval == 0:
             if rank == 0:
-                print(
-                    f"Train Epoch: {epoch} [{batch_idx}/{len(dataloader)} ({100.*batch_idx/len(dataloader):.0f}%)] \t Loss: {loss.item():.6f}"
-                )
+                print(f"Train Epoch: {epoch} [{batch_idx}/{len(dataloader)} ({100.*batch_idx/len(dataloader):.0f}%)] \t Loss: {loss.item():.6f}")
             if args.dry_run:
                 break
 
@@ -90,9 +86,7 @@ def test(model, device, dataloader):
 
     test_loss /= attempts
 
-    print(
-        f"\nTest set: Average loss: {test_loss:.4f}, Accuracy: {correct}/{attempts} ({100.*correct/attempts:.0f}%)\n"
-    )
+    print(f"\nTest set: Average loss: {test_loss:.4f}, Accuracy: {correct}/{attempts} ({100.*correct/attempts:.0f}%)\n")
 
 
 def setup(rank, world_size):
@@ -123,9 +117,7 @@ def main():
         metavar="N",
         help="number of epochs to train (default: 14)",
     )
-    parser.add_argument(
-        "--lr", type=float, default=1.0, metavar="LR", help="learning rate (default: 1.0)"
-    )
+    parser.add_argument("--lr", type=float, default=1.0, metavar="LR", help="learning rate (default: 1.0)")
     parser.add_argument(
         "--gamma",
         type=float,
@@ -133,15 +125,9 @@ def main():
         metavar="M",
         help="Learning rate step gamma (default: 0.9)",
     )
-    parser.add_argument(
-        "--no-cuda", action="store_true", default=False, help="disables CUDA training"
-    )
-    parser.add_argument(
-        "--dry-run", action="store_true", default=False, help="quickly check a single pass"
-    )
-    parser.add_argument(
-        "--seed", type=int, default=1, metavar="S", help="random seed (default: 1)"
-    )
+    parser.add_argument("--no-cuda", action="store_true", default=False, help="disables CUDA training")
+    parser.add_argument("--dry-run", action="store_true", default=False, help="quickly check a single pass")
+    parser.add_argument("--seed", type=int, default=1, metavar="S", help="random seed (default: 1)")
     parser.add_argument(
         "--log-interval",
         type=int,
@@ -149,9 +135,7 @@ def main():
         metavar="N",
         help="how many batches to wait before logging training status",
     )
-    parser.add_argument(
-        "--save-model", action="store_true", default=False, help="For Saving the current Model"
-    )
+    parser.add_argument("--save-model", action="store_true", default=False, help="For Saving the current Model")
     args = parser.parse_args()
 
     print("job folder:", args.job_folder)
@@ -167,8 +151,7 @@ def main():
 
     assert gpus_per_node == torch.cuda.device_count()
     print(
-        f"Hello from rank {rank} of {world_size} on {gethostname()} where there are"
-        f" {gpus_per_node} allocated GPUs per node.",
+        f"Hello from rank {rank} of {world_size} on {gethostname()} where there are" f" {gpus_per_node} allocated GPUs per node.",
         flush=True,
     )
 
@@ -190,16 +173,12 @@ def main():
     optimizer = optim.Adadelta(ddp_model.parameters(), lr=args.lr)
     scheduler = StepLR(optimizer, step_size=1, gamma=args.gamma)
 
-    transform = transforms.Compose(
-        [transforms.ToTensor(), transforms.Normalize((0.1307,), (0.3081,))]
-    )
+    transform = transforms.Compose([transforms.ToTensor(), transforms.Normalize((0.1307,), (0.3081,))])
 
     train_data = datasets.MNIST(data_folder, train=True, download=True, transform=transform)
     test_data = datasets.MNIST(data_folder, train=False, download=True, transform=transform)
 
-    train_sampler = torch.utils.data.distributed.DistributedSampler(
-        train_data, num_replicas=world_size, rank=rank
-    )
+    train_sampler = torch.utils.data.distributed.DistributedSampler(train_data, num_replicas=world_size, rank=rank)
     train_loader = torch.utils.data.DataLoader(
         train_data,
         batch_size=args.batch_size,
@@ -223,9 +202,7 @@ def main():
         scheduler.step()
         if rank == 0:
             epoch_time = time.time() - epoch_time
-            print(
-                f"\nEpoch {epoch}, Train & Test Time = {epoch_time:.1f} seconds (measured from rank {rank}).\n"
-            )
+            print(f"\nEpoch {epoch}, Train & Test Time = {epoch_time:.1f} seconds (measured from rank {rank}).\n")
 
     if args.save_model and rank == 0:
         torch.save(model.state_dict(), os.path.join(args.job_folder, "test_model_ddp.pt"))
