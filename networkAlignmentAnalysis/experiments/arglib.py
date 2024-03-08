@@ -2,22 +2,12 @@ def add_standard_training_parameters(parser):
     """
     arguments for defining the network type, dataset, optimizer, and other metaparameters
     """
-    parser.add_argument(
-        "--network", type=str, default="MLP", help="what base network architecture to use"
-    )
+    parser.add_argument("--network", type=str, default="MLP", help="what base network architecture to use")
     parser.add_argument("--dataset", type=str, default="MNIST", help="what dataset to use")
-    parser.add_argument(
-        "--optimizer", type=str, default="Adam", help="what optimizer to train with"
-    )
-    parser.add_argument(
-        "--batch-size", type=int, default=1024, help="what batch size to pass to DataLoader"
-    )
-    parser.add_argument(
-        "--epochs", type=int, default=100, help="how many epochs to train the networks on"
-    )
-    parser.add_argument(
-        "--replicates", type=int, default=5, help="how many replicates of each network to train"
-    )
+    parser.add_argument("--optimizer", type=str, default="Adam", help="what optimizer to train with")
+    parser.add_argument("--batch-size", type=int, default=1024, help="what batch size to pass to DataLoader")
+    parser.add_argument("--epochs", type=int, default=100, help="how many epochs to train the networks on")
+    parser.add_argument("--replicates", type=int, default=5, help="how many replicates of each network to train")
     return parser
 
 

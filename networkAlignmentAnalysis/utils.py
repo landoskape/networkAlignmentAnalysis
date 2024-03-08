@@ -4,6 +4,7 @@ import os
 from typing import List
 from contextlib import contextmanager
 from functools import wraps
+from natsort import natsorted
 import numpy as np
 from scipy.linalg import null_space
 from sklearn.decomposition import IncrementalPCA
@@ -114,9 +115,7 @@ def get_eval_transform_by_cutoff(cutoff):
     """
 
     def eval_transform(evals):
-        assert torch.all(
-            evals >= 0
-        ), "found negative eigenvalues, doesn't work for 'cutoff' eval_transform"
+        assert torch.all(evals >= 0), "found negative eigenvalues, doesn't work for 'cutoff' eval_transform"
         evals = evals / torch.sum(evals)
         return 1.0 * (evals > cutoff)
 
@@ -337,17 +336,13 @@ def alignment(input, weight, method="alignment"):
         alignment: (num_out, ) torch tensor
             - proportion of variance explained by projection of **input** onto each **weight** vector
     """
-    assert (
-        method == "alignment" or method == "similarity"
-    ), "method must be set to either 'alignment' or 'similarity' (or None, default is alignment)"
+    assert method == "alignment" or method == "similarity", "method must be set to either 'alignment' or 'similarity' (or None, default is alignment)"
     if method == "alignment":
         cc = torch.cov(input.T)
     elif method == "similarity":
         cc = smartcorr(input.T)
     else:
-        raise ValueError(
-            f"did not recognize method ({method}), must be 'alignment' or 'similarity'"
-        )
+        raise ValueError(f"did not recognize method ({method}), must be 'alignment' or 'similarity'")
     # Compute rayleigh quotient
     rq = torch.sum(torch.matmul(weight, cc) * weight, axis=1) / torch.sum(weight * weight, axis=1)
     # proportion of variance explained by a projection of the input onto each weight
@@ -355,20 +350,8 @@ def alignment(input, weight, method="alignment"):
 
 
 def get_maximum_strides(h_input, w_input, layer):
-    h_max = int(
-        np.floor(
-            (h_input + 2 * layer.padding[0] - layer.dilation[0] * (layer.kernel_size[0] - 1) - 1)
-            / layer.stride[0]
-            + 1
-        )
-    )
-    w_max = int(
-        np.floor(
-            (w_input + 2 * layer.padding[1] - layer.dilation[1] * (layer.kernel_size[1] - 1) - 1)
-            / layer.stride[1]
-            + 1
-        )
-    )
+    h_max = int(np.floor((h_input + 2 * layer.padding[0] - layer.dilation[0] * (layer.kernel_size[0] - 1) - 1) / layer.stride[0] + 1))
+    w_max = int(np.floor((w_input + 2 * layer.padding[1] - layer.dilation[1] * (layer.kernel_size[1] - 1) - 1) / layer.stride[1] + 1))
     return h_max, w_max
 
 
@@ -430,10 +413,7 @@ def condense_values(full: List[List[List[torch.Tensor]]]) -> List[torch.Tensor]:
     the tensor should have shape = number of nodes in this layer (also must be the same for each network) (or can be anything as long as consistent across layers)
     """
     num_layers = len(full[0][0])
-    return [
-        torch.stack([value_by_layer(value, layer) for value in full])
-        for layer in range(num_layers)
-    ]
+    return [torch.stack([value_by_layer(value, layer) for value in full]) for layer in range(num_layers)]
 
 
 def transpose_list(list_of_lists):
@@ -564,9 +544,7 @@ def save_checkpoint(nets, optimizers, results, path):
     Method for saving checkpoints for networks throughout training.
     """
     multi_model_ckpt = {f"model_state_dict_{i}": net.state_dict() for i, net in enumerate(nets)}
-    multi_optimizer_ckpt = {
-        f"optimizer_state_dict_{i}": opt.state_dict() for i, opt in enumerate(optimizers)
-    }
+    multi_optimizer_ckpt = {f"optimizer_state_dict_{i}": opt.state_dict() for i, opt in enumerate(optimizers)}
     checkpoint = results | multi_model_ckpt | multi_optimizer_ckpt
     torch.save(checkpoint, path)
 
@@ -582,8 +560,8 @@ def load_checkpoints(nets, optimizers, device, path):
     elif device == "cuda":
         checkpoint = torch.load(path)
 
-    net_ids = sorted([key for key in checkpoint if key.startswith("model_state_dict")])
-    opt_ids = sorted([key for key in checkpoint if key.startswith("optimizer_state_dict")])
+    net_ids = natsorted([key for key in checkpoint if key.startswith("model_state_dict")])
+    opt_ids = natsorted([key for key in checkpoint if key.startswith("optimizer_state_dict")])
     assert all(
         [oi.split("_")[-1] == ni.split("_")[-1] for oi, ni in zip(opt_ids, net_ids)]
     ), "nets and optimizers cannot be matched up from checkpoint"

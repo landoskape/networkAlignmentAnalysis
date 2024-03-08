@@ -99,32 +99,22 @@ class CNN2P2(nn.Module):
         shapedWeights = [[] for _ in range(len(ffLayers))]
         for idx in range(len(ffLayers)):
             assert np.all(evals[idx] >= 0), "Found negative eigenvalues..."
-            cFractionVariance = evals[idx] / np.sum(
-                evals[idx]
-            )  # compute fraction of variance explained by each eigenvector
+            cFractionVariance = evals[idx] / np.sum(evals[idx])  # compute fraction of variance explained by each eigenvector
             cKeepFraction = evalTransform(cFractionVariance).astype(
                 cFractionVariance.dtype
             )  # make sure the datatype doesn't change, otherwise pytorch einsum will be unhappy
-            assert np.all(
-                cKeepFraction >= 0
-            ), "Found negative transformed keep fractions. This means the transform function has an improper form."
+            assert np.all(cKeepFraction >= 0), "Found negative transformed keep fractions. This means the transform function has an improper form."
             assert np.all(
                 cKeepFraction <= 1
             ), "Found keep fractions greater than 1. This is bad practice, design the evalTransform function to have a domain and range within [0,1]"
-            weightNorms = torch.norm(
-                netweights[idx], dim=1, keepdim=True
-            )  # measure norm of weights (this will be invariant to the change)
+            weightNorms = torch.norm(netweights[idx], dim=1, keepdim=True)  # measure norm of weights (this will be invariant to the change)
             evecComposition = torch.einsum(
                 "oi,xi->oxi", sbetas[idx], torch.tensor(evecs[idx])
             )  # create tensor composed of each eigenvector scaled to it's contribution in each weight vector
-            newComposition = torch.einsum(
-                "oxi,i->ox", evecComposition, torch.tensor(cKeepFraction)
-            ).to(
+            newComposition = torch.einsum("oxi,i->ox", evecComposition, torch.tensor(cKeepFraction)).to(
                 DEVICE
             )  # scale eigenvectors based on their keep fraction (by default scale them by their variance)
-            shapedWeights[idx] = (
-                newComposition / torch.norm(newComposition, dim=1, keepdim=True) * weightNorms
-            )
+            shapedWeights[idx] = newComposition / torch.norm(newComposition, dim=1, keepdim=True) * weightNorms
 
         # Assign new weights to network
         self.fc1.weight.data = shapedWeights[0]
@@ -207,20 +197,12 @@ class CNN2P2(nn.Module):
         allinputs = []
         if not onlyFF:
             # Only add inputs to convolutional layers if onlyFF switch is off
+            allinputs.append(torch.flatten(torch.cat(allimages, dim=0).detach().cpu(), 1))  # inputs to first convolutional layer
             allinputs.append(
-                torch.flatten(torch.cat(allimages, dim=0).detach().cpu(), 1)
-            )  # inputs to first convolutional layer
-            allinputs.append(
-                torch.flatten(
-                    torch.cat([cact[0] for cact in activations], dim=0).detach().cpu(), 1
-                )
+                torch.flatten(torch.cat([cact[0] for cact in activations], dim=0).detach().cpu(), 1)
             )  # inputs to second convolutional layer
-        allinputs.append(
-            torch.flatten(torch.cat([cact[1] for cact in activations], dim=0).detach().cpu(), 1)
-        )  # inputs to first feedforward layer
-        allinputs.append(
-            torch.cat([cact[2] for cact in activations], dim=0).detach().cpu()
-        )  # inputs to last convolutional layer
+        allinputs.append(torch.flatten(torch.cat([cact[1] for cact in activations], dim=0).detach().cpu(), 1))  # inputs to first feedforward layer
+        allinputs.append(torch.cat([cact[2] for cact in activations], dim=0).detach().cpu())  # inputs to last convolutional layer
 
         # Measure eigenfeatures for input to each feedforward layer
         eigenvalues = []
@@ -242,9 +224,7 @@ class CNN2P2(nn.Module):
 
     @staticmethod
     def measureEigenFeatures(net, dataloader, onlyFF=True, DEVICE=None):
-        eigenvalues, eigenvectors = CNN2P2.inputEigenfeatures(
-            net, dataloader, onlyFF=onlyFF, DEVICE=DEVICE
-        )
+        eigenvalues, eigenvectors = CNN2P2.inputEigenfeatures(net, dataloader, onlyFF=onlyFF, DEVICE=DEVICE)
 
         # Measure dot product of weights on eigenvectors for each layer
         beta = []
@@ -313,60 +293,48 @@ class MLP4(nn.Module):
         dfc1 = alpha * (
             activations[0].T @ x
             - torch.sum(
-                self.fc1.weight.data.clone().detach().reshape(H, D, 1)
-                * (activations[0] * 2).T.reshape(H, B, 1).permute(0, 2, 1),
+                self.fc1.weight.data.clone().detach().reshape(H, D, 1) * (activations[0] * 2).T.reshape(H, B, 1).permute(0, 2, 1),
                 dim=2,
             )
         )
         self.fc1.weight.data = self.fc1.weight.data + dfc1
-        self.fc1.weight.data = self.fc1.weight.data / torch.norm(
-            self.fc1.weight.data, dim=1, keepdim=True
-        )
+        self.fc1.weight.data = self.fc1.weight.data / torch.norm(self.fc1.weight.data, dim=1, keepdim=True)
         # print(f"fc1: Weight.shape:{self.fc1.weight.data.shape}, update.shape:{dfc1.shape}")
         # Layer 2:
         H, D = (activations[1].shape[1], activations[0].shape[1])
         dfc2 = alpha * (
             activations[1].T @ activations[0]
             - torch.sum(
-                self.fc2.weight.data.clone().detach().reshape(H, D, 1)
-                * (activations[1] * 2).T.reshape(H, B, 1).permute(0, 2, 1),
+                self.fc2.weight.data.clone().detach().reshape(H, D, 1) * (activations[1] * 2).T.reshape(H, B, 1).permute(0, 2, 1),
                 dim=2,
             )
         )
         self.fc2.weight.data = self.fc2.weight.data + dfc2
-        self.fc2.weight.data = self.fc2.weight.data / torch.norm(
-            self.fc2.weight.data, dim=1, keepdim=True
-        )
+        self.fc2.weight.data = self.fc2.weight.data / torch.norm(self.fc2.weight.data, dim=1, keepdim=True)
         # print(f"fc2: Weight.shape:{self.fc2.weight.data.shape}, update.shape:{dfc2.shape}")
         # Layer 3:
         H, D = (activations[2].shape[1], activations[1].shape[1])
         dfc3 = alpha * (
             activations[2].T @ activations[1]
             - torch.sum(
-                self.fc3.weight.data.clone().detach().reshape(H, D, 1)
-                * (activations[2] * 2).T.reshape(H, B, 1).permute(0, 2, 1),
+                self.fc3.weight.data.clone().detach().reshape(H, D, 1) * (activations[2] * 2).T.reshape(H, B, 1).permute(0, 2, 1),
                 dim=2,
             )
         )
         self.fc3.weight.data = self.fc3.weight.data + dfc3
-        self.fc3.weight.data = self.fc3.weight.data / torch.norm(
-            self.fc3.weight.data, dim=1, keepdim=True
-        )
+        self.fc3.weight.data = self.fc3.weight.data / torch.norm(self.fc3.weight.data, dim=1, keepdim=True)
         # print(f"fc3: Weight.shape:{self.fc3.weight.data.shape}, update.shape:{dfc3.shape}")
         # Layer 4:
         H, D = (activations[3].shape[1], activations[2].shape[1])
         dfc4 = alpha * (
             activations[3].T @ activations[2]
             - torch.sum(
-                self.fc4.weight.data.clone().detach().reshape(H, D, 1)
-                * (activations[3] * 2).T.reshape(H, B, 1).permute(0, 2, 1),
+                self.fc4.weight.data.clone().detach().reshape(H, D, 1) * (activations[3] * 2).T.reshape(H, B, 1).permute(0, 2, 1),
                 dim=2,
             )
         )
         self.fc4.weight.data = self.fc4.weight.data + dfc4
-        self.fc4.weight.data = self.fc4.weight.data / torch.norm(
-            self.fc4.weight.data, dim=1, keepdim=True
-        )
+        self.fc4.weight.data = self.fc4.weight.data / torch.norm(self.fc4.weight.data, dim=1, keepdim=True)
         # print(f"fc4: Weight.shape:{self.fc4.weight.data.shape}, update.shape:{dfc4.shape}")
 
     def getActivations(self, x):
@@ -426,32 +394,22 @@ class MLP4(nn.Module):
         shapedWeights = [[] for _ in range(self.numLayers)]
         for layer in range(self.numLayers):
             assert np.all(evals[layer] >= 0), "Found negative eigenvalues..."
-            cFractionVariance = evals[layer] / np.sum(
-                evals[layer]
-            )  # compute fraction of variance explained by each eigenvector
+            cFractionVariance = evals[layer] / np.sum(evals[layer])  # compute fraction of variance explained by each eigenvector
             cKeepFraction = evalTransform(cFractionVariance).astype(
                 cFractionVariance.dtype
             )  # make sure the datatype doesn't change, otherwise pytorch einsum will be unhappy
-            assert np.all(
-                cKeepFraction >= 0
-            ), "Found negative transformed keep fractions. This means the transform function has an improper form."
+            assert np.all(cKeepFraction >= 0), "Found negative transformed keep fractions. This means the transform function has an improper form."
             assert np.all(
                 cKeepFraction <= 1
             ), "Found keep fractions greater than 1. This is bad practice, design the evalTransform function to have a domain and range within [0,1]"
-            weightNorms = torch.norm(
-                netweights[layer], dim=1, keepdim=True
-            )  # measure norm of weights (this will be invariant to the change)
+            weightNorms = torch.norm(netweights[layer], dim=1, keepdim=True)  # measure norm of weights (this will be invariant to the change)
             evecComposition = torch.einsum(
                 "oi,xi->oxi", sbetas[layer], torch.tensor(evecs[layer])
             )  # create tensor composed of each eigenvector scaled to it's contribution in each weight vector
-            newComposition = torch.einsum(
-                "oxi,i->ox", evecComposition, torch.tensor(cKeepFraction)
-            ).to(
+            newComposition = torch.einsum("oxi,i->ox", evecComposition, torch.tensor(cKeepFraction)).to(
                 DEVICE
             )  # scale eigenvectors based on their keep fraction (by default scale them by their variance)
-            shapedWeights[layer] = (
-                newComposition / torch.norm(newComposition, dim=1, keepdim=True) * weightNorms
-            )
+            shapedWeights[layer] = newComposition / torch.norm(newComposition, dim=1, keepdim=True) * weightNorms
 
         # Assign new weights to network
         self.fc1.weight.data = shapedWeights[0]
@@ -537,9 +495,7 @@ class MLP4(nn.Module):
         allinputs = []
         allinputs.append(torch.cat(allimages, dim=0).detach().cpu())
         for layer in range(NL - 1):
-            allinputs.append(
-                torch.cat([cact[layer] for cact in activations], dim=0).detach().cpu()
-            )
+            allinputs.append(torch.cat([cact[layer] for cact in activations], dim=0).detach().cpu())
 
         # Measure eigenfeatures for each layer
         eigenvalues = []
@@ -626,9 +582,7 @@ class AlexNet(nn.Module):
         self.h2 = F.relu(self.conv2(self.maxPool2(self.h1)))
         self.h3 = F.relu(self.conv3(self.h2))
         self.h4 = F.relu(self.conv4(self.h3))
-        self.h5 = F.relu(
-            self.fc5(torch.flatten(self.do5(self.avgpool5(self.maxPool5(self.h4))), 1))
-        )
+        self.h5 = F.relu(self.fc5(torch.flatten(self.do5(self.avgpool5(self.maxPool5(self.h4))), 1)))
         self.h6 = F.relu(self.fc6(self.do6(self.h5)))
         self.out = self.fc7(self.h6)
         return self.out
@@ -681,19 +635,11 @@ class AlexNet(nn.Module):
         activations = self.getActivations(x)
         similarity = []
         similarity.append(torch.mean(aat.similarityConvLayer(x, self.conv0), axis=1))
-        similarity.append(
-            torch.mean(aat.similarityConvLayer(self.maxPool1(activations[0]), self.conv1), axis=1)
-        )
-        similarity.append(
-            torch.mean(aat.similarityConvLayer(self.maxPool2(activations[1]), self.conv2), axis=1)
-        )
+        similarity.append(torch.mean(aat.similarityConvLayer(self.maxPool1(activations[0]), self.conv1), axis=1))
+        similarity.append(torch.mean(aat.similarityConvLayer(self.maxPool2(activations[1]), self.conv2), axis=1))
         similarity.append(torch.mean(aat.similarityConvLayer(activations[2], self.conv3), axis=1))
         similarity.append(torch.mean(aat.similarityConvLayer(activations[3], self.conv4), axis=1))
-        similarity.append(
-            aat.similarityLinearLayer(
-                torch.flatten(self.do5(self.avgpool5(self.maxPool5(activations[4]))), 1), self.fc5
-            )
-        )
+        similarity.append(aat.similarityLinearLayer(torch.flatten(self.do5(self.avgpool5(self.maxPool5(activations[4]))), 1), self.fc5))
         similarity.append(aat.similarityLinearLayer(activations[5], self.fc6))
         similarity.append(aat.similarityLinearLayer(activations[6], self.fc7))
         return similarity
@@ -702,19 +648,11 @@ class AlexNet(nn.Module):
         activations = self.getActivations(x)
         alignment = []
         alignment.append(torch.mean(aat.alignmentConvLayer(x, self.conv0), axis=1))
-        alignment.append(
-            torch.mean(aat.alignmentConvLayer(self.maxPool1(activations[0]), self.conv1), axis=1)
-        )
-        alignment.append(
-            torch.mean(aat.alignmentConvLayer(self.maxPool2(activations[1]), self.conv2), axis=1)
-        )
+        alignment.append(torch.mean(aat.alignmentConvLayer(self.maxPool1(activations[0]), self.conv1), axis=1))
+        alignment.append(torch.mean(aat.alignmentConvLayer(self.maxPool2(activations[1]), self.conv2), axis=1))
         alignment.append(torch.mean(aat.alignmentConvLayer(activations[2], self.conv3), axis=1))
         alignment.append(torch.mean(aat.alignmentConvLayer(activations[3], self.conv4), axis=1))
-        alignment.append(
-            aat.alignmentLinearLayer(
-                torch.flatten(self.do5(self.avgpool5(self.maxPool5(activations[4]))), 1), self.fc5
-            )
-        )
+        alignment.append(aat.alignmentLinearLayer(torch.flatten(self.do5(self.avgpool5(self.maxPool5(activations[4]))), 1), self.fc5))
         alignment.append(aat.alignmentLinearLayer(activations[5], self.fc6))
         alignment.append(aat.alignmentLinearLayer(activations[6], self.fc7))
         return alignment
@@ -798,9 +736,7 @@ class eigenNet(nn.Module):
             device = "cuda" if torch.cuda.is_available() else "cpu"
         self.numLayers = 4
         # Initialize weights with standard method
-        self.fc1 = nn.Linear(
-            784, 100
-        )  # Need a maximum of 784 weights for all possible eigenvectors of input
+        self.fc1 = nn.Linear(784, 100)  # Need a maximum of 784 weights for all possible eigenvectors of input
         self.fc2 = nn.Linear(100, 100)  # And same here
         self.fc3 = nn.Linear(100, 50)
         self.fc4 = nn.Linear(50, 10)
@@ -838,15 +774,9 @@ class eigenNet(nn.Module):
 
     def forward(self, x):
         self.hidden1 = self.actFunc(self.fc1(self.getProjections(self.eval0, self.evec0, x)))
-        self.hidden2 = self.actFunc(
-            self.fc2(self.dropout(self.getProjections(self.eval1, self.evec1, self.hidden1)))
-        )
-        self.hidden3 = self.actFunc(
-            self.fc3(self.dropout(self.getProjections(self.eval2, self.evec2, self.hidden2)))
-        )
-        self.output = self.actFunc(
-            self.fc4(self.dropout(self.getProjections(self.eval3, self.evec3, self.hidden3)))
-        )
+        self.hidden2 = self.actFunc(self.fc2(self.dropout(self.getProjections(self.eval1, self.evec1, self.hidden1))))
+        self.hidden3 = self.actFunc(self.fc3(self.dropout(self.getProjections(self.eval2, self.evec2, self.hidden2))))
+        self.output = self.actFunc(self.fc4(self.dropout(self.getProjections(self.eval3, self.evec3, self.hidden3))))
         return self.output
 
     def getProjections(self, evals, evecs, batch):
@@ -939,9 +869,7 @@ class eigenNet1(nn.Module):
             device = "cuda" if torch.cuda.is_available() else "cpu"
         self.numLayers = 4
         # Initialize weights with standard method
-        self.fc1 = nn.Linear(
-            784, 100
-        )  # Need a maximum of 784 weights for all possible eigenvectors of input
+        self.fc1 = nn.Linear(784, 100)  # Need a maximum of 784 weights for all possible eigenvectors of input
         self.fc2 = nn.Linear(100, 100)  # And same here
         self.fc3 = nn.Linear(100, 50)
         self.fc4 = nn.Linear(50, 10)
@@ -950,9 +878,7 @@ class eigenNet1(nn.Module):
         self.device = device
         self.to(device)
         self.dataloader = dataloader  # keep dataloader for fitting eigenstructure of network
-        self.eval0, self.evec0 = self.doEig(
-            self.getDataFromDataLoader().T
-        )  # Fit eigenstructure of input data
+        self.eval0, self.evec0 = self.doEig(self.getDataFromDataLoader().T)  # Fit eigenstructure of input data
 
     def forward(self, x):
         self.hidden1 = self.actFunc(self.fc1(self.getProjections(self.eval0, self.evec0, x)))

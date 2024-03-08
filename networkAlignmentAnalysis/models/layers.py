@@ -28,7 +28,6 @@ from .. import utils
 REGISTRY_REQUIREMENTS = [
     "name",
     "layer_index",
-    "layer_handle",
     "unfold",
     "ignore",
     "flag",
@@ -39,7 +38,6 @@ LAYER_REGISTRY = {
     nn.Linear: {
         "name": "linear",
         "layer_index": None,
-        "layer_handle": lambda layer: layer,
         "unfold": False,
         "ignore": False,
         "flag": False,
@@ -47,7 +45,6 @@ LAYER_REGISTRY = {
     nn.Conv2d: {
         "name": "conv2d",
         "layer_index": None,
-        "layer_handle": lambda layer: layer,
         "unfold": True,
         "ignore": False,
         "flag": True,
@@ -61,7 +58,6 @@ def default_metaprms_ignore(name):
     metaparameters = {
         "name": name,
         "layer_index": None,
-        "layer_handle": None,
         "unfold": False,
         "ignore": True,
         "flag": True,
@@ -74,7 +70,6 @@ def default_metaprms_linear(index, name="linear", flag=False):
     metaparameters = {
         "name": name,
         "layer_index": index,
-        "layer_handle": lambda layer: layer[index],
         "unfold": False,
         "ignore": False,
         "flag": flag,
@@ -87,7 +82,6 @@ def default_metaprms_conv2d(index, name="conv2d", flag=True):
     metaparameters = {
         "name": name,
         "layer_index": index,
-        "layer_handle": lambda layer: layer[index],
         "unfold": True,
         "ignore": False,
         "flag": flag,
@@ -99,9 +93,7 @@ def check_metaparameters(metaparameters, throw=True):
     """validate whether metaparameters is a dictionary containing the required keys for an alignment network"""
     if not all([required in metaparameters for required in REGISTRY_REQUIREMENTS]):
         if throw:
-            raise ValueError(
-                f"metaparameters are missing required keys, it requires all of the following: {REGISTRY_REQUIREMENTS}"
-            )
+            raise ValueError(f"metaparameters are missing required keys, it requires all of the following: {REGISTRY_REQUIREMENTS}")
         return False
     return True
 

@@ -53,9 +53,9 @@ class AdversarialShaping(Experiment):
     # ----------------------------------------------
     # ------ methods for main experiment loop ------
     # ----------------------------------------------
-    def load_networks(self):
+    def create_networks(self):
         """
-        method for loading networks
+        method for creating networks
 
         depending on the experiment parameters (which comparison, which metaparams etc)
         this method will create multiple networks with requested parameters and return
@@ -83,10 +83,7 @@ class AdversarialShaping(Experiment):
             for _ in cutoffs
         ]
         nets = [net.to(self.device) for net in nets]
-        optimizers = [
-            optim(net.parameters(), lr=self.args.default_lr, weight_decay=self.args.default_wd)
-            for net in nets
-        ]
+        optimizers = [optim(net.parameters(), lr=self.args.default_lr, weight_decay=self.args.default_wd) for net in nets]
         prms = {
             "cutoffs": cutoffs,  # the value of the independent variable for each network
             "name": "cutoff",  # the name of the parameter being varied
@@ -102,8 +99,8 @@ class AdversarialShaping(Experiment):
         train and test networks
         do supplementary analyses
         """
-        # load networks
-        nets, optimizers, prms = self.load_networks()
+        # create networks
+        nets, optimizers, prms = self.create_networks()
 
         # load dataset
         dataset = self.prepare_dataset(nets[0])
@@ -116,9 +113,7 @@ class AdversarialShaping(Experiment):
             manual_layers=nets[0].get_alignment_layer_indices(),
         )
 
-        train_results, test_results = processing.train_networks(
-            self, nets, optimizers, dataset, alignment=True, **special_parameters
-        )
+        train_results, test_results = processing.train_networks(self, nets, optimizers, dataset, alignment=True, **special_parameters)
 
         # measure eigenfeatures
         eigen_results = processing.measure_eigenfeatures(self, nets, dataset, train_set=False)
@@ -129,9 +124,7 @@ class AdversarialShaping(Experiment):
             use_sign=True,
             fgsm_transform=lambda x: x,
         )
-        adversarial_results = processing.measure_adversarial_attacks(
-            nets, dataset, self, eigen_results, train_set=False, **adversarial_parameters
-        )
+        adversarial_results = processing.measure_adversarial_attacks(nets, dataset, self, eigen_results, train_set=False, **adversarial_parameters)
 
         # make full results dictionary
         results = dict(
@@ -149,10 +142,6 @@ class AdversarialShaping(Experiment):
         """
         main plotting loop
         """
-        plotting.plot_train_results(
-            self, results["train_results"], results["test_results"], results["prms"]
-        )
+        plotting.plot_train_results(self, results["train_results"], results["test_results"], results["prms"])
         plotting.plot_eigenfeatures(self, results["eigen_results"], results["prms"])
-        plotting.plot_adversarial_results(
-            self, results["eigen_results"], results["adversarial_results"], results["prms"]
-        )
+        plotting.plot_adversarial_results(self, results["eigen_results"], results["adversarial_results"], results["prms"])

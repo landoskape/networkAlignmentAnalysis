@@ -3,7 +3,8 @@ from abc import ABC, abstractmethod
 from argparse import ArgumentParser
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, List, Tuple
+from typing import Dict, List, Tuple, Optional
+from natsort import natsorted
 
 import torch
 import wandb
@@ -21,9 +22,7 @@ class Experiment(ABC):
         self.basepath = files.results_path() / self.basename  # Register basepath of experiment
         self.get_args(args=args)  # Parse arguments to python program
         self.register_timestamp()  # Register timestamp of experiment
-        self.run = (
-            self.configure_wandb()
-        )  # Create a wandb run object (or None depending on args.use_wandb)
+        self.run = self.configure_wandb()  # Create a wandb run object (or None depending on args.use_wandb)
         self.device = self.args.device
 
     def report(self, init=False, args=False, meta_args=False) -> None:
@@ -38,9 +37,7 @@ class Experiment(ABC):
 
             # Report any other relevant details
             if self.args.save_networks and self.args.nosave:
-                print(
-                    "Note: setting nosave to True will overwrite save_networks. Nothing will be saved."
-                )
+                print("Note: setting nosave to True will overwrite save_networks. Nothing will be saved.")
 
         # Report experiment parameters
         if args:
@@ -146,9 +143,7 @@ class Experiment(ABC):
         the required method make_args() is used to add any additional arguments
         specific to each experiment.
         """
-        self.meta_args = (
-            []
-        )  # a list of arguments that shouldn't be updated when loading an old experiment
+        self.meta_args = []  # a list of arguments that shouldn't be updated when loading an old experiment
         parser = ArgumentParser(description=f"arguments for {self.basename}")
         parser = self.make_args(parser)
 
@@ -215,9 +210,7 @@ class Experiment(ABC):
 
         # do checks
         if self.args.use_timestamp and self.args.justplot:
-            assert (
-                self.args.timestamp is not None
-            ), "if use_timestamp=True and plotting stored results, must provide a timestamp"
+            assert self.args.timestamp is not None, "if use_timestamp=True and plotting stored results, must provide a timestamp"
 
     @abstractmethod
     def make_args(self, parser) -> ArgumentParser:
@@ -248,18 +241,14 @@ class Experiment(ABC):
         """Method for updating arguments from saved parameter dictionary"""
         # First check if saved parameters contain unknown keys
         if prms.keys() > vars(self.args).keys():
-            raise ValueError(
-                f"Saved parameters contain keys not found in ArgumentParser:  {set(prms.keys()).difference(vars(self.args).keys())}"
-            )
+            raise ValueError(f"Saved parameters contain keys not found in ArgumentParser:  {set(prms.keys()).difference(vars(self.args).keys())}")
 
         # Then update self.args while ignoring any meta arguments
         for ak in vars(self.args):
             if ak in self.meta_args:
                 continue  # don't update meta arguments
             if ak in prms and prms[ak] != vars(self.args)[ak]:
-                print(
-                    f"Requested argument {ak}={vars(self.args)[ak]} differs from saved, which is: {ak}={prms[ak]}. Using saved..."
-                )
+                print(f"Requested argument {ak}={vars(self.args)[ak]} differs from saved, which is: {ak}={prms[ak]}. Using saved...")
                 setattr(self.args, ak, prms[ak])
 
     def save_repo(self):
@@ -304,7 +293,28 @@ class Experiment(ABC):
         name = f"net_{id}_" if id is not None else "net_"
         for idx, net in enumerate(nets):
             cname = name + f"{idx}"
-            torch.save(net, self.get_network_path(cname))
+            torch.save(net.state_dict(), self.get_network_path(cname))
+
+    def load_networks(self, nets, id=None, check_number=True):
+        """
+        Method for loading any networks that were trained
+
+        This only works by loading the state_dict, so we have to provided instantiated networks first.
+        It assumes that number of saved networks correspond to the loaded nets (in a natsort kind of way),
+        so the check_number=True argument makes sure the number of requested networks (len(nets))= the
+        number of detected saved networks.
+
+        If **id** is provided, will use id in addition to the index to name the network.
+        """
+        name = f"net_{id}_" if id is not None else "net_"
+        pattern = self.get_network_path(name + "*").name
+        matches = natsorted([match.stem for match in self.get_dir().rglob(pattern)])
+        if check_number:
+            msg = f"the number of detected networks with name signature {name}*.pt does not match the number of requested networks ({len(matches)}/{len(nets)})"
+            assert len(matches) == len(nets), msg
+        for idx, match in enumerate(matches):
+            c_state_dict = torch.load(self.get_network_path(match))
+            nets[idx].load_state_dict(c_state_dict)
 
     @abstractmethod
     def main(self) -> Tuple[Dict, List[torch.nn.Module]]:

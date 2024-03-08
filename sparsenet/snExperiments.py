@@ -19,9 +19,7 @@ def mainExperiment(opts={}):
     # if use cuda
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     # create net
-    sparse_net = SparseNet(
-        arg.n_neuron, arg.size, R_lr=arg.r_learning_rate, lmda=arg.reg, device=device
-    )
+    sparse_net = SparseNet(arg.n_neuron, arg.size, R_lr=arg.r_learning_rate, lmda=arg.reg, device=device)
     # load data
     batch_size = 500
     dataloader = DataLoader(

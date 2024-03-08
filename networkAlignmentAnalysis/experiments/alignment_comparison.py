@@ -32,23 +32,13 @@ class AlignmentComparison(Experiment):
         # add special experiment parameters
         # -- the "comparison" determines what should be compared by the script --
         # -- depending on selection, something about the networks are varied throughout the experiment --
-        parser.add_argument(
-            "--comparison", type=str, default="lr"
-        )  # what comparison to do (see load_networks for options)
-        parser.add_argument(
-            "--regularizers", type=str, nargs="*", default=["none", "dropout", "weight_decay"]
-        )
-        parser.add_argument(
-            "--lrs", type=float, nargs="*", default=[1e-2, 1e-3, 1e-4]
-        )  # which learning rates to use
+        parser.add_argument("--comparison", type=str, default="lr")  # what comparison to do (see create_networks for options)
+        parser.add_argument("--regularizers", type=str, nargs="*", default=["none", "dropout", "weight_decay"])
+        parser.add_argument("--lrs", type=float, nargs="*", default=[1e-2, 1e-3, 1e-4])  # which learning rates to use
 
         # supporting parameters for some of the "comparisons"
-        parser.add_argument(
-            "--compare-dropout", type=float, default=0.5
-        )  # dropout when doing regularizer comparison
-        parser.add_argument(
-            "--compare-wd", type=float, default=1e-5
-        )  # weight-decay when doing regularizer comparison
+        parser.add_argument("--compare-dropout", type=float, default=0.5)  # dropout when doing regularizer comparison
+        parser.add_argument("--compare-wd", type=float, default=1e-5)  # weight-decay when doing regularizer comparison
 
         # return parser
         return parser
@@ -56,9 +46,9 @@ class AlignmentComparison(Experiment):
     # ----------------------------------------------
     # ------ methods for main experiment loop ------
     # ----------------------------------------------
-    def load_networks(self):
+    def create_networks(self):
         """
-        method for loading networks
+        method for create networks
 
         depending on the experiment parameters (which comparison, which metaparams etc)
         this method will create multiple networks with requested parameters and return
@@ -88,10 +78,7 @@ class AlignmentComparison(Experiment):
                 for _ in lrs
             ]
             nets = [net.to(self.device) for net in nets]
-            optimizers = [
-                optim(net.parameters(), lr=lr, weight_decay=self.args.default_wd)
-                for net, lr in zip(nets, lrs)
-            ]
+            optimizers = [optim(net.parameters(), lr=lr, weight_decay=self.args.default_wd) for net, lr in zip(nets, lrs)]
             prms = {
                 "lrs": lrs,  # the value of the independent variable for each network
                 "name": "lr",  # the name of the parameter being varied
@@ -101,25 +88,13 @@ class AlignmentComparison(Experiment):
 
         # compare training with different regularizers
         elif self.args.comparison == "regularizer":
-            dropout_values = [
-                self.args.compare_dropout * (reg == "dropout") for reg in self.args.regularizers
-            ]
-            weight_decay_values = [
-                self.args.compare_wd * (reg == "weight_decay") for reg in self.args.regularizers
-            ]
+            dropout_values = [self.args.compare_dropout * (reg == "dropout") for reg in self.args.regularizers]
+            weight_decay_values = [self.args.compare_wd * (reg == "weight_decay") for reg in self.args.regularizers]
             dropouts = [do for do in dropout_values for _ in range(self.args.replicates)]
             weight_decays = [wd for wd in weight_decay_values for _ in range(self.args.replicates)]
-            nets = [
-                model_constructor(
-                    dropout=do, **model_parameters, ignore_flag=self.args.ignore_flag
-                )
-                for do in dropouts
-            ]
+            nets = [model_constructor(dropout=do, **model_parameters, ignore_flag=self.args.ignore_flag) for do in dropouts]
             nets = [net.to(self.device) for net in nets]
-            optimizers = [
-                optim(net.parameters(), lr=self.args.default_lr, weight_decay=wd)
-                for net, wd in zip(nets, weight_decays)
-            ]
+            optimizers = [optim(net.parameters(), lr=self.args.default_lr, weight_decay=wd) for net, wd in zip(nets, weight_decays)]
             prms = {
                 "dropouts": dropouts,  # dropout values by network
                 "weight_decays": weight_decays,  # weight decay values by network
@@ -139,8 +114,8 @@ class AlignmentComparison(Experiment):
         train and test networks
         do supplementary analyses
         """
-        # load networks
-        nets, optimizers, prms = self.load_networks()
+        # create networks
+        nets, optimizers, prms = self.create_networks()
 
         # load dataset
         dataset = self.prepare_dataset(nets[0])
@@ -157,9 +132,7 @@ class AlignmentComparison(Experiment):
         eigen_results = processing.measure_eigenfeatures(self, nets, dataset, train_set=False)
 
         # do targeted dropout experiment
-        evec_dropout_results, evec_dropout_parameters = processing.eigenvector_dropout(
-            self, nets, dataset, eigen_results, train_set=False
-        )
+        evec_dropout_results, evec_dropout_parameters = processing.eigenvector_dropout(self, nets, dataset, eigen_results, train_set=False)
 
         # make full results dictionary
         results = dict(
@@ -180,9 +153,7 @@ class AlignmentComparison(Experiment):
         """
         main plotting loop
         """
-        plotting.plot_train_results(
-            self, results["train_results"], results["test_results"], results["prms"]
-        )
+        plotting.plot_train_results(self, results["train_results"], results["test_results"], results["prms"])
         plotting.plot_dropout_results(
             self,
             results["dropout_results"],

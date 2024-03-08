@@ -46,22 +46,14 @@ def check_time(num_workers, batch_size, pin_memory, fast_loader):
         transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5)),
     )
 
-    trainset = torchvision.datasets.CIFAR10(
-        root=files.data_path(), train=True, download=False, transform=transform
-    )
+    trainset = torchvision.datasets.CIFAR10(root=files.data_path(), train=True, download=False, transform=transform)
 
-    loader_kwargs = dict(
-        batch_size=batch_size, shuffle=True, num_workers=num_workers, pin_memory=pin_memory
-    )
+    loader_kwargs = dict(batch_size=batch_size, shuffle=True, num_workers=num_workers, pin_memory=pin_memory)
 
     if fast_loader:
-        trainloader = torch.utils.data.DataLoader(
-            trainset, **loader_kwargs, persistent_workers=fast_loader
-        )
+        trainloader = torch.utils.data.DataLoader(trainset, **loader_kwargs, persistent_workers=fast_loader)
     else:
-        trainloader = torch.utils.data.DataLoader(
-            trainset, **loader_kwargs, persistent_workers=fast_loader
-        )
+        trainloader = torch.utils.data.DataLoader(trainset, **loader_kwargs, persistent_workers=fast_loader)
 
     net = Net()
     net.to(DEVICE)
@@ -110,7 +102,5 @@ if __name__ == "__main__":
 
                     init, avg, total, second = check_time(nw, bs, pin, fast)
                     print(f"NW={nw}, BS={bs}, Pin={pin}, Persistent={fast}")
-                    print(
-                        f"Dur={total:.3f}, PerBatch={avg:.2f}, Prep={init:.2f}, SecondPrep={second:.2f}"
-                    )
+                    print(f"Dur={total:.3f}, PerBatch={avg:.2f}, Prep={init:.2f}, SecondPrep={second:.2f}")
                     print("")

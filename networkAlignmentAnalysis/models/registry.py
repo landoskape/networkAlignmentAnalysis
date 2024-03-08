@@ -37,9 +37,7 @@ def get_model_parameters(model_name, dataset):
     if model_name not in DATASET_ARGUMENTS:
         raise ValueError(f"Model ({model_name}) is not in DATASET_ARGUMENTS lookup dictionary.")
     if dataset not in DATASET_ARGUMENTS[model_name]:
-        raise ValueError(
-            f"Dataset ({dataset}) is not in the DATASET_ARGUMENTS lookup for model ({model_name})"
-        )
+        raise ValueError(f"Dataset ({dataset}) is not in the DATASET_ARGUMENTS lookup for model ({model_name})")
 
     # get dataset specific arguments
     return DATASET_ARGUMENTS[model_name][dataset]
