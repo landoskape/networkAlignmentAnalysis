@@ -17,6 +17,7 @@ dependencies:
   - matplotlib
   - tqdm
   - ipykernel
+  - natsort
   - pip:
     - wandb
     - black
