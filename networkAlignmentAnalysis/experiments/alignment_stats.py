@@ -85,7 +85,7 @@ class AlignmentStatistics(Experiment):
 
         # do targeted dropout experiment
         dropout_results, dropout_parameters = processing.progressive_dropout_experiment(
-            self, nets, dataset, alignment=test_results["alignment"], train_set=False
+            self, nets, dataset, alignment=test_results.get("alignment", None), train_set=False
         )
 
         # measure eigenfeatures
