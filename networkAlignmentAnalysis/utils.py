@@ -4,6 +4,7 @@ import os
 from typing import List
 from contextlib import contextmanager
 from functools import wraps
+from natsort import natsorted
 import numpy as np
 from scipy.linalg import null_space
 from sklearn.decomposition import IncrementalPCA
@@ -559,8 +560,8 @@ def load_checkpoints(nets, optimizers, device, path):
     elif device == "cuda":
         checkpoint = torch.load(path)
 
-    net_ids = sorted([key for key in checkpoint if key.startswith("model_state_dict")])
-    opt_ids = sorted([key for key in checkpoint if key.startswith("optimizer_state_dict")])
+    net_ids = natsorted([key for key in checkpoint if key.startswith("model_state_dict")])
+    opt_ids = natsorted([key for key in checkpoint if key.startswith("optimizer_state_dict")])
     assert all(
         [oi.split("_")[-1] == ni.split("_")[-1] for oi, ni in zip(opt_ids, net_ids)]
     ), "nets and optimizers cannot be matched up from checkpoint"
