@@ -4,6 +4,7 @@ from argparse import ArgumentParser
 from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Tuple, Optional
+from natsort import natsorted
 
 import torch
 import wandb
@@ -292,23 +293,28 @@ class Experiment(ABC):
         name = f"net_{id}_" if id is not None else "net_"
         for idx, net in enumerate(nets):
             cname = name + f"{idx}"
-            torch.save(net, self.get_network_path(cname))
+            torch.save(net.state_dict(), self.get_network_path(cname))
 
-    def load_networks(self, idx: Optional[List] = None, id=None):
+    def load_networks(self, nets, id=None, check_number=True):
         """
         Method for loading any networks that were trained
 
-        If **idx** is provided, will look for networks with requested idx
-        If not provided, will get all networks with matching names (in natural order)
-        If **id** is provided, will use id in addition to the index
+        This only works by loading the state_dict, so we have to provided instantiated networks first.
+        It assumes that number of saved networks correspond to the loaded nets (in a natsort kind of way),
+        so the check_number=True argument makes sure the number of requested networks (len(nets))= the
+        number of detected saved networks.
+
+        If **id** is provided, will use id in addition to the index to name the network.
         """
         name = f"net_{id}_" if id is not None else "net_"
-        if idx is None:
-            print("hi")
-
-        # for idx, net in enumerate(nets):
-        #     cname = name + f"{idx}"
-        #     torch.save(net, self.get_network_path(cname))
+        pattern = self.get_network_path(name + "*").name
+        matches = natsorted([match.stem for match in self.get_dir().rglob(pattern)])
+        if check_number:
+            msg = f"the number of detected networks with name signature {name}*.pt does not match the number of requested networks ({len(matches)}/{len(nets)})"
+            assert len(matches) == len(nets), msg
+        for idx, match in enumerate(matches):
+            c_state_dict = torch.load(self.get_network_path(match))
+            nets[idx].load_state_dict(c_state_dict)
 
     @abstractmethod
     def main(self) -> Tuple[Dict, List[torch.nn.Module]]:
