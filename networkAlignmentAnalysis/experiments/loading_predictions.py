@@ -38,23 +38,13 @@ class LoadingPredictions(Experiment):
         # add special experiment parameters
         # -- the "comparison" determines what should be compared by the script --
         # -- depending on selection, something about the networks are varied throughout the experiment --
-        parser.add_argument(
-            "--comparison", type=str, default="lr"
-        )  # what comparison to do (see load_networks for options)
-        parser.add_argument(
-            "--regularizers", type=str, nargs="*", default=["none", "dropout", "weight_decay"]
-        )
-        parser.add_argument(
-            "--lrs", type=float, nargs="*", default=[1e-2, 1e-3, 1e-4]
-        )  # which learning rates to use
+        parser.add_argument("--comparison", type=str, default="lr")  # what comparison to do (see create_networks for options)
+        parser.add_argument("--regularizers", type=str, nargs="*", default=["none", "dropout", "weight_decay"])
+        parser.add_argument("--lrs", type=float, nargs="*", default=[1e-2, 1e-3, 1e-4])  # which learning rates to use
 
         # supporting parameters for some of the "comparisons"
-        parser.add_argument(
-            "--compare-dropout", type=float, default=0.5
-        )  # dropout when doing regularizer comparison
-        parser.add_argument(
-            "--compare-wd", type=float, default=1e-5
-        )  # weight-decay when doing regularizer comparison
+        parser.add_argument("--compare-dropout", type=float, default=0.5)  # dropout when doing regularizer comparison
+        parser.add_argument("--compare-wd", type=float, default=1e-5)  # weight-decay when doing regularizer comparison
 
         # return parser
         return parser
@@ -62,9 +52,9 @@ class LoadingPredictions(Experiment):
     # ----------------------------------------------
     # ------ methods for main experiment loop ------
     # ----------------------------------------------
-    def load_networks(self):
+    def create_networks(self):
         """
-        method for loading networks
+        method for creating networks
 
         depending on the experiment parameters (which comparison, which metaparams etc)
         this method will create multiple networks with requested parameters and return
@@ -94,10 +84,7 @@ class LoadingPredictions(Experiment):
                 for _ in lrs
             ]
             nets = [net.to(self.device) for net in nets]
-            optimizers = [
-                optim(net.parameters(), lr=lr, weight_decay=self.args.default_wd)
-                for net, lr in zip(nets, lrs)
-            ]
+            optimizers = [optim(net.parameters(), lr=lr, weight_decay=self.args.default_wd) for net, lr in zip(nets, lrs)]
             prms = {
                 "lrs": lrs,  # the value of the independent variable for each network
                 "name": "lr",  # the name of the parameter being varied
@@ -107,25 +94,13 @@ class LoadingPredictions(Experiment):
 
         # compare training with different regularizers
         elif self.args.comparison == "regularizer":
-            dropout_values = [
-                self.args.compare_dropout * (reg == "dropout") for reg in self.args.regularizers
-            ]
-            weight_decay_values = [
-                self.args.compare_wd * (reg == "weight_decay") for reg in self.args.regularizers
-            ]
+            dropout_values = [self.args.compare_dropout * (reg == "dropout") for reg in self.args.regularizers]
+            weight_decay_values = [self.args.compare_wd * (reg == "weight_decay") for reg in self.args.regularizers]
             dropouts = [do for do in dropout_values for _ in range(self.args.replicates)]
             weight_decays = [wd for wd in weight_decay_values for _ in range(self.args.replicates)]
-            nets = [
-                model_constructor(
-                    dropout=do, **model_parameters, ignore_flag=self.args.ignore_flag
-                )
-                for do in dropouts
-            ]
+            nets = [model_constructor(dropout=do, **model_parameters, ignore_flag=self.args.ignore_flag) for do in dropouts]
             nets = [net.to(self.device) for net in nets]
-            optimizers = [
-                optim(net.parameters(), lr=self.args.default_lr, weight_decay=wd)
-                for net, wd in zip(nets, weight_decays)
-            ]
+            optimizers = [optim(net.parameters(), lr=self.args.default_lr, weight_decay=wd) for net, wd in zip(nets, weight_decays)]
             prms = {
                 "dropouts": dropouts,  # dropout values by network
                 "weight_decays": weight_decays,  # weight decay values by network
@@ -145,8 +120,8 @@ class LoadingPredictions(Experiment):
         train and test networks
         do supplementary analyses
         """
-        # load networks
-        nets, optimizers, prms = self.load_networks()
+        # create networks
+        nets, optimizers, prms = self.create_networks()
 
         # load dataset
         dataset = self.prepare_dataset(nets[0])
@@ -160,17 +135,9 @@ class LoadingPredictions(Experiment):
         )
 
         # measure eigenfeatures
-        _, _, eigenvector = utils.named_transpose(
-            [net.measure_eigenfeatures(dataset.test_loader) for net in nets]
-        )
-        train_beta_by_class = [
-            net.measure_class_eigenfeatures(dataset.train_loader, evecs)
-            for net, evecs in zip(nets, eigenvector)
-        ]
-        test_beta_by_class = [
-            net.measure_class_eigenfeatures(dataset.test_loader, evecs)
-            for net, evecs in zip(nets, eigenvector)
-        ]
+        _, _, eigenvector = utils.named_transpose([net.measure_eigenfeatures(dataset.test_loader) for net in nets])
+        train_beta_by_class = [net.measure_class_eigenfeatures(dataset.train_loader, evecs) for net, evecs in zip(nets, eigenvector)]
+        test_beta_by_class = [net.measure_class_eigenfeatures(dataset.test_loader, evecs) for net, evecs in zip(nets, eigenvector)]
 
         # make full results dictionary
         results = dict(
@@ -206,9 +173,7 @@ class LoadingPredictions(Experiment):
         # x_train, x_test, y_train, y_test = get_train_test_data(train_beta_by_class, test_beta_by_class, idx_layer, func)
 
         ldas = self.fit_ldas(x_train, y_train, num_components)
-        confusion_train, confusion_test, confusion_overall = self.test_ldas(
-            ldas, x_train, y_train, x_test, y_test, num_components
-        )
+        confusion_train, confusion_test, confusion_overall = self.test_ldas(ldas, x_train, y_train, x_test, y_test, num_components)
         print("Test Accuracy (within network):", np.diag(confusion_overall).reshape(3, 5))
 
         plt.close("all")
@@ -238,22 +203,10 @@ class LoadingPredictions(Experiment):
         num_classes = train_beta_by_class[0][0].size(0)
         num_per_class_train = train_beta_by_class[0][0].size(2)
         num_per_class_test = test_beta_by_class[0][0].size(2)
-        x_train = [
-            func(torch.concatenate([t for t in tbc[idx_layer]], dim=1).T)
-            for tbc in train_beta_by_class
-        ]
-        x_test = [
-            func(torch.concatenate([t for t in tbc[idx_layer]], dim=1).T)
-            for tbc in test_beta_by_class
-        ]
-        y_train = [
-            torch.repeat_interleave(torch.arange(num_classes), num_per_class_train)
-            for _ in range(len(train_beta_by_class))
-        ]
-        y_test = [
-            torch.repeat_interleave(torch.arange(num_classes), num_per_class_test)
-            for _ in range(len(train_beta_by_class))
-        ]
+        x_train = [func(torch.concatenate([t for t in tbc[idx_layer]], dim=1).T) for tbc in train_beta_by_class]
+        x_test = [func(torch.concatenate([t for t in tbc[idx_layer]], dim=1).T) for tbc in test_beta_by_class]
+        y_train = [torch.repeat_interleave(torch.arange(num_classes), num_per_class_train) for _ in range(len(train_beta_by_class))]
+        y_test = [torch.repeat_interleave(torch.arange(num_classes), num_per_class_test) for _ in range(len(train_beta_by_class))]
         return x_train, x_test, y_train, y_test
 
     def get_train_test_rms_data(train_beta_by_class, test_beta_by_class, idx_layer, num_average):
@@ -263,31 +216,17 @@ class LoadingPredictions(Experiment):
         num_groups_train = int(num_samples_train / num_average)
         num_groups_test = int(num_samples_test / num_average)
         x_group_train = [
-            tbc[idx_layer][:, :, : num_average * num_groups_train].reshape(
-                num_classes, num_nodes, num_groups_train, num_average
-            )
+            tbc[idx_layer][:, :, : num_average * num_groups_train].reshape(num_classes, num_nodes, num_groups_train, num_average)
             for tbc in train_beta_by_class
         ]
         x_group_test = [
-            tbc[idx_layer][:, :, : num_average * num_groups_test].reshape(
-                num_classes, num_nodes, num_groups_test, num_average
-            )
+            tbc[idx_layer][:, :, : num_average * num_groups_test].reshape(num_classes, num_nodes, num_groups_test, num_average)
             for tbc in test_beta_by_class
         ]
-        x_train = [
-            torch.concatenate([x for x in utils.rms(xgt, 3)], dim=1).T for xgt in x_group_train
-        ]
-        x_test = [
-            torch.concatenate([x for x in utils.rms(xgt, 3)], dim=1).T for xgt in x_group_test
-        ]
-        y_train = [
-            torch.repeat_interleave(torch.arange(num_classes), num_groups_train)
-            for _ in range(len(train_beta_by_class))
-        ]
-        y_test = [
-            torch.repeat_interleave(torch.arange(num_classes), num_groups_test)
-            for _ in range(len(train_beta_by_class))
-        ]
+        x_train = [torch.concatenate([x for x in utils.rms(xgt, 3)], dim=1).T for xgt in x_group_train]
+        x_test = [torch.concatenate([x for x in utils.rms(xgt, 3)], dim=1).T for xgt in x_group_test]
+        y_train = [torch.repeat_interleave(torch.arange(num_classes), num_groups_train) for _ in range(len(train_beta_by_class))]
+        y_test = [torch.repeat_interleave(torch.arange(num_classes), num_groups_test) for _ in range(len(train_beta_by_class))]
         return x_train, x_test, y_train, y_test
 
     def fit_ldas(x_train, y_train, num_components):
