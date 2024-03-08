@@ -3,7 +3,7 @@ from abc import ABC, abstractmethod
 from argparse import ArgumentParser
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, List, Tuple
+from typing import Dict, List, Tuple, Optional
 
 import torch
 import wandb
@@ -21,9 +21,7 @@ class Experiment(ABC):
         self.basepath = files.results_path() / self.basename  # Register basepath of experiment
         self.get_args(args=args)  # Parse arguments to python program
         self.register_timestamp()  # Register timestamp of experiment
-        self.run = (
-            self.configure_wandb()
-        )  # Create a wandb run object (or None depending on args.use_wandb)
+        self.run = self.configure_wandb()  # Create a wandb run object (or None depending on args.use_wandb)
         self.device = self.args.device
 
     def report(self, init=False, args=False, meta_args=False) -> None:
@@ -38,9 +36,7 @@ class Experiment(ABC):
 
             # Report any other relevant details
             if self.args.save_networks and self.args.nosave:
-                print(
-                    "Note: setting nosave to True will overwrite save_networks. Nothing will be saved."
-                )
+                print("Note: setting nosave to True will overwrite save_networks. Nothing will be saved.")
 
         # Report experiment parameters
         if args:
@@ -146,9 +142,7 @@ class Experiment(ABC):
         the required method make_args() is used to add any additional arguments
         specific to each experiment.
         """
-        self.meta_args = (
-            []
-        )  # a list of arguments that shouldn't be updated when loading an old experiment
+        self.meta_args = []  # a list of arguments that shouldn't be updated when loading an old experiment
         parser = ArgumentParser(description=f"arguments for {self.basename}")
         parser = self.make_args(parser)
 
@@ -215,9 +209,7 @@ class Experiment(ABC):
 
         # do checks
         if self.args.use_timestamp and self.args.justplot:
-            assert (
-                self.args.timestamp is not None
-            ), "if use_timestamp=True and plotting stored results, must provide a timestamp"
+            assert self.args.timestamp is not None, "if use_timestamp=True and plotting stored results, must provide a timestamp"
 
     @abstractmethod
     def make_args(self, parser) -> ArgumentParser:
@@ -248,18 +240,14 @@ class Experiment(ABC):
         """Method for updating arguments from saved parameter dictionary"""
         # First check if saved parameters contain unknown keys
         if prms.keys() > vars(self.args).keys():
-            raise ValueError(
-                f"Saved parameters contain keys not found in ArgumentParser:  {set(prms.keys()).difference(vars(self.args).keys())}"
-            )
+            raise ValueError(f"Saved parameters contain keys not found in ArgumentParser:  {set(prms.keys()).difference(vars(self.args).keys())}")
 
         # Then update self.args while ignoring any meta arguments
         for ak in vars(self.args):
             if ak in self.meta_args:
                 continue  # don't update meta arguments
             if ak in prms and prms[ak] != vars(self.args)[ak]:
-                print(
-                    f"Requested argument {ak}={vars(self.args)[ak]} differs from saved, which is: {ak}={prms[ak]}. Using saved..."
-                )
+                print(f"Requested argument {ak}={vars(self.args)[ak]} differs from saved, which is: {ak}={prms[ak]}. Using saved...")
                 setattr(self.args, ak, prms[ak])
 
     def save_repo(self):
@@ -305,6 +293,22 @@ class Experiment(ABC):
         for idx, net in enumerate(nets):
             cname = name + f"{idx}"
             torch.save(net, self.get_network_path(cname))
+
+    def load_networks(self, idx: Optional[List] = None, id=None):
+        """
+        Method for loading any networks that were trained
+
+        If **idx** is provided, will look for networks with requested idx
+        If not provided, will get all networks with matching names (in natural order)
+        If **id** is provided, will use id in addition to the index
+        """
+        name = f"net_{id}_" if id is not None else "net_"
+        if idx is None:
+            print("hi")
+
+        # for idx, net in enumerate(nets):
+        #     cname = name + f"{idx}"
+        #     torch.save(net, self.get_network_path(cname))
 
     @abstractmethod
     def main(self) -> Tuple[Dict, List[torch.nn.Module]]:
