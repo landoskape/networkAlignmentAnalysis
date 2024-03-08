@@ -128,7 +128,7 @@ class AlignmentNetwork(nn.Module, ABC):
         kwargs can update keys in the metaparameters. If the layer class is not registered, then all
         metaparameters must be provided as kwargs.
 
-        Required kwargs are: name, layer_handle, alignment_method, unfold, ignore, ...
+        Required kwargs are: name, layer_index, alignment_method, unfold, ignore, ...
         """
         if not isinstance(layer, nn.Module):
             raise TypeError(f"provided layer is of type: {type(layer)}, but only nn.Module objects are permitted!")
@@ -267,12 +267,21 @@ class AlignmentNetwork(nn.Module, ABC):
         return layer_outputs[idx]
 
     @torch.no_grad()
+    def get_layer(self, layer, metaprms):
+        """get alignment layer from **layer** (which might be a sequential layer, etc.) based on metaprms"""
+        if metaprms["layer_index"] is None:
+            return layer
+        else:
+            return layer[metaprms["layer_index"]]
+
+    @torch.no_grad()
     def get_alignment_layers(self, idx=None):
         """convenience method for retrieving registered layers for alignment measurements throughout the network"""
         layers = []
         for layer, metaprms in zip(self.layers, self.metaparameters):
             if self._include_layer(metaprms):
-                layers.append(metaprms["layer_handle"](layer))
+                # ATL: deprecated line because the lambda method layer_handle prevented saving-- layers.append(metaprms["layer_handle"](layer))
+                layers.append(self.get_layer(layer, metaprms))  # get layer without layer_handle lambda method
         if idx is None:
             return layers
         return layers[idx]
