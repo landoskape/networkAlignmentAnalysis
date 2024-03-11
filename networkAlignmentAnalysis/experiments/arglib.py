@@ -69,6 +69,12 @@ def add_checkpointing(parser):
         help="if used, will save checkpoints of models",
     )
     parser.add_argument(
+        "--ckpt-frequency",
+        default=1,
+        type=int,
+        help="frequency (by epoch) to save checkpoints of models",
+    )
+    parser.add_argument(
         "--use_wandb",
         default=False,
         action="store_true",

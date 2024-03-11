@@ -30,7 +30,7 @@ def train_networks(exp, nets, optimizers, dataset, **special_parameters):
         print("loaded networks from previous checkpoint")
 
     if exp.args.save_ckpts:
-        parameters["save_checkpoints"] = (True, 1, exp.get_checkpoint_path(), exp.args.device)
+        parameters["save_checkpoints"] = (True, exp.args.ckpt_frequency, exp.get_checkpoint_path(), exp.args.device)
 
     print("training networks...")
     train_results = train.train(nets, optimizers, dataset, **parameters)

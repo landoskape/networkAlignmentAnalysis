@@ -315,6 +315,7 @@ class Experiment(ABC):
         for idx, match in enumerate(matches):
             c_state_dict = torch.load(self.get_network_path(match))
             nets[idx].load_state_dict(c_state_dict)
+        return nets
 
     @abstractmethod
     def main(self) -> Tuple[Dict, List[torch.nn.Module]]:
