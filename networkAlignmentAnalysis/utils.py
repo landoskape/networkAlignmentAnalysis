@@ -122,6 +122,19 @@ def get_eval_transform_by_cutoff(cutoff):
     return eval_transform
 
 
+def fractional_histogram(*args, **kwargs):
+    """wrapper of np.histogram() with relative counts instead of total or density"""
+    counts, bins = np.histogram(*args, **kwargs)
+    counts = counts / np.sum(counts)
+    return counts, bins
+
+
+def edge2center(edges):
+    """from a list of edges of bins (e.g. for np.histogram()), return the centers between the edges"""
+    assert isinstance(edges, np.ndarray) and edges.ndim == 1, "edges must be a 1-d numpy array"
+    return edges[:-1] + np.diff(edges) / 2
+
+
 def smartcorr(input):
     """
     Performs torch corrcoef on the input data but sets each pair-wise correlation coefficent
@@ -310,7 +323,7 @@ def fast_rank(input):
 
 
 # ------------------ alignment functions ----------------------
-def alignment(input, weight, method="alignment"):
+def alignment(input, weight, method="alignment", relative=True):
     """
     measure alignment (proportion variance explained) between **input** and **weight**
 
@@ -330,6 +343,8 @@ def alignment(input, weight, method="alignment"):
             - which method to use to measure structure in **input**
             - if 'alignment', uses covariance matrix of **input**
             - if 'similarity', uses correlation matrix of **input**
+        relative: bool, default=True,
+            - if True, will measure relative RQ (divide by sum of eigenvalues)
 
     returns
     -------
@@ -345,8 +360,11 @@ def alignment(input, weight, method="alignment"):
         raise ValueError(f"did not recognize method ({method}), must be 'alignment' or 'similarity'")
     # Compute rayleigh quotient
     rq = torch.sum(torch.matmul(weight, cc) * weight, axis=1) / torch.sum(weight * weight, axis=1)
-    # proportion of variance explained by a projection of the input onto each weight
-    return rq / torch.trace(cc)
+    if relative:
+        # proportion of variance explained by a projection of the input onto each weight
+        return rq / torch.trace(cc)
+    # variance explained by a projection of the input onto each weight
+    return rq
 
 
 def get_maximum_strides(h_input, w_input, layer):
@@ -421,15 +439,20 @@ def transpose_list(list_of_lists):
     return list(map(list, zip(*list_of_lists)))
 
 
-def named_transpose(list_of_lists):
+def named_transpose(list_of_lists, reduction=None):
     """
     helper function for transposing lists without forcing the output to be a list like transpose_list
 
     for example, if list_of_lists contains 10 copies of lists that each have 3 iterable elements you
     want to name "A", "B", and "C", then write:
     A, B, C = named_transpose(list_of_lists)
+
+    if reduction is used, it will be applied to each output, otherwise will make them lists
     """
+    if reduction is not None:
+        return map(reduction, zip(*list_of_lists))
     return map(list, zip(*list_of_lists))
+    
 
 
 def ptp(tensor, dim=None, keepdim=False):
