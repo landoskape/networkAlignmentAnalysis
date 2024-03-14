@@ -377,12 +377,12 @@ class AlignmentNetwork(nn.Module, ABC):
         return delta_weights
 
     @torch.no_grad()
-    def measure_alignment(self, x, precomputed=False, method="alignment"):
+    def measure_alignment(self, x, precomputed=False, method="alignment", relative=True):
         # Pre-layer activations start with input (x) and ignore output
         inputs_to_layers = self.get_layer_inputs(x, precomputed=precomputed)
         preprocessed = self._preprocess_inputs(inputs_to_layers, compress_convolutional=True)
         weights = self.get_alignment_weights(flatten=True)
-        return [alignment(input, weight, method=method) for input, weight in zip(preprocessed, weights)]
+        return [alignment(input, weight, method=method, relative=relative) for input, weight in zip(preprocessed, weights)]
 
     @torch.no_grad()
     def forward_targeted_dropout(self, x, idxs, layers):
