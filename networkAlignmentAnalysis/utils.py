@@ -4,6 +4,7 @@ import os
 from typing import List
 from contextlib import contextmanager
 from functools import wraps
+import math
 from natsort import natsorted
 import numpy as np
 from scipy.linalg import null_space
@@ -130,8 +131,8 @@ def fractional_histogram(*args, **kwargs):
 
 
 def edge2center(edges):
-    """from a list of edges of bins (e.g. for np.histogram()), return the centers between the edges"""
-    assert isinstance(edges, np.ndarray) and edges.ndim == 1, "edges must be a 1-d numpy array"
+    """from a list of edges of bins (e.g. for torch.histogram()), return the centers between the edges"""
+    assert edges.ndim == 1, "edges must be a 1-d array"
     return edges[:-1] + np.diff(edges) / 2
 
 
@@ -367,6 +368,35 @@ def alignment(input, weight, method="alignment", relative=True):
     return rq
 
 
+@torch.no_grad()
+def expected_alignment_distribution(eigenvalues, relative=True, valid_rotation=True, bins=11, num_tests=100):
+    """
+    for a set of eigenvalues, measure the expected distribution given aligned weights
+
+    relative determines whether to normalize by sum of eigenvalues
+    valid_rotation determines whether we create orthonormal rotation matrices (for True)
+    or just normally distributed weights with the expected variance (for False)
+    bins works like histogram bins
+    num_tests determines how many tests to do (it's actually num_tests*len(eigenvalues))
+    """
+    # otherwise, randomly sample using eigenvalue as weighted average
+    N = len(eigenvalues)
+    if relative:
+        eigenvalues /= eigenvalues.sum()
+    eigenvalues = eigenvalues.view(-1, 1).expand(-1, N * num_tests)
+    if valid_rotation:
+        mixing = [torch.linalg.qr(torch.normal(0, 1 / math.sqrt(N), (N, N)))[0].T for _ in range(num_tests)]
+        coefficients = torch.concatenate(mixing, axis=1) ** 2
+    else:
+        coefficients = torch.normal(0, 1 / math.sqrt(N), (N, N * num_tests)) ** 2
+    coefficients = coefficients.to(get_device(eigenvalues))
+    weights = eigenvalues * coefficients
+    alignment = torch.mean(eigenvalues * weights, dim=0) / weights.sum(dim=0)
+    counts, bins = torch.histogram(alignment.cpu(), bins=bins, density=True)
+    centers = edge2center(bins)
+    return counts, bins, centers
+
+
 def get_maximum_strides(h_input, w_input, layer):
     h_max = int(np.floor((h_input + 2 * layer.padding[0] - layer.dilation[0] * (layer.kernel_size[0] - 1) - 1) / layer.stride[0] + 1))
     w_max = int(np.floor((w_input + 2 * layer.padding[1] - layer.dilation[1] * (layer.kernel_size[1] - 1) - 1) / layer.stride[1] + 1))
@@ -452,7 +482,6 @@ def named_transpose(list_of_lists, reduction=None):
     if reduction is not None:
         return map(reduction, zip(*list_of_lists))
     return map(list, zip(*list_of_lists))
-    
 
 
 def ptp(tensor, dim=None, keepdim=False):
