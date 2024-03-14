@@ -12,16 +12,16 @@ from argparse import ArgumentParser
 
 def get_args(args=None):
     parser = ArgumentParser(description="test alignment code")
-    parser.add_argument("--network", type=str, default="CNN2P2")
-    parser.add_argument("--dataset", type=str, default="MNIST")
+    parser.add_argument("--network", type=str, default="MLP")
+    # parser.add_argument("--dataset", type=str, default="MNIST")
     parser.add_argument("--device", type=str, default=None)
-    parser.add_argument("--no-alignment", default=False, action="store_true")
-    parser.add_argument(
-        "--ignore-flag",
-        default=False,
-        action="store_true",
-        help="if used, will omit flagged layers in analyses",
-    )
+    # parser.add_argument("--no-alignment", default=False, action="store_true")
+    # parser.add_argument(
+    #     "--ignore-flag",
+    #     default=False,
+    #     action="store_true",
+    #     help="if used, will omit flagged layers in analyses",
+    # )
     return parser.parse_args(args=args)
 
 
@@ -31,28 +31,21 @@ if __name__ == "__main__":
     DEVICE = args.device if args.device is not None else "cuda" if torch.cuda.is_available() else "cpu"
     print("using device:", DEVICE, "DeviceCount:", torch.cuda.device_count())
 
-    # get network
-    net_args = dict(ignore_flag=args.ignore_flag)
+    model_name = args.network
+    dataset_name = "MNIST"
 
-    net = get_model(args.network, build=True, **net_args).to(DEVICE)
+    net = get_model(model_name, build=True, dataset=dataset_name, dropout=0.0, ignore_flag=False)
+    net.to(DEVICE)
 
     loader_parameters = dict(
-        batch_size=1024,
+        shuffle=True,
     )
-    dataset = get_dataset(
-        args.dataset,
-        build=True,
-        transform_parameters=net,
-        loader_parameters=loader_parameters,
-        dataset_parameters=dict(download=True),
-        device=DEVICE,
+    dataset = get_dataset(dataset_name, build=True, transform_parameters=net, loader_parameters=loader_parameters, device=DEVICE)
+
+    optimizer = torch.optim.Adam(net.parameters())
+
+    parameters = dict(
+        num_epochs=2,
+        compare_expected=True,
     )
-
-    optim = torch.optim.Adam(net.parameters(), lr=1e-3)
-
-    alignment = False if args.no_alignment else True
-    results = train.train([net], [optim], dataset, train_set=False, num_epochs=1, alignment=True)
-
-    inputs, labels = net._process_collect_activity(dataset, train_set=False, with_updates=True, use_training_mode=True)
-    betas, eigenvalues, eigenvectors = net.measure_eigenfeatures(inputs)
-    # net.shape_eigenfeatures(net.get_alignment_layer_indices(), eigenvalues, eigenvectors, lambda x: x)
+    results = train.train([net], [optimizer], dataset, **parameters)
