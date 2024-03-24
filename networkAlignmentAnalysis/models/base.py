@@ -319,7 +319,7 @@ class AlignmentNetwork(nn.Module, ABC):
         weights = []
         for layer in self.get_alignment_layers():
             # get weight data for this layer
-            weight = layer.weight.data
+            weight = layer.weight.data.clone()
 
             # if requesting flat weights, flatten them
             if flatten:
@@ -369,19 +369,47 @@ class AlignmentNetwork(nn.Module, ABC):
         return preprocessed
 
     @torch.no_grad()
-    def compare_weights(self, weights):
+    def compare_weights(self, weights, norm=False):
+        """
+        compare network weights with **weights** (usually to measure change in weights)
+        if norm=True, will measure norm of weight changes rather than structure
+        """
         current_weights = self.get_alignment_weights()
         delta_weights = []
         for iw, cw in zip(weights, current_weights):
-            delta_weights.append(torch.norm(cw.flatten(1) - iw.flatten(1), dim=1))
+            if norm:
+                delta_weights.append(torch.norm(cw.flatten(1) - iw.flatten(1), dim=1))
+            else:
+                delta_weights.append(cw - iw)
         return delta_weights
 
     @torch.no_grad()
     def measure_alignment(self, x, precomputed=False, method="alignment", relative=True):
+        """
+        measure alignment of the networks weights with the inputs to each layer from batch **x**
+        """
         # Pre-layer activations start with input (x) and ignore output
         inputs_to_layers = self.get_layer_inputs(x, precomputed=precomputed)
         preprocessed = self._preprocess_inputs(inputs_to_layers, compress_convolutional=True)
         weights = self.get_alignment_weights(flatten=True)
+        return [alignment(input, weight, method=method, relative=relative) for input, weight in zip(preprocessed, weights)]
+
+    @torch.no_grad()
+    def measure_alignment_weights(self, x, weights, precomputed=False, method="alignment", relative=True):
+        """
+        alternative for using predefined weights (usually for alignment of weight updates)
+
+        standard usage
+        --------------
+        net = AlignmentNetwork() # of some sort, like MLP(), for example
+        init_weights = net.get_alignment_weights()
+        ... do some training ...
+        delta_weights = net.compare_weights(init_weights)
+        delta_alignment = net.measure_alignment_on_weights(x, delta_weights) # where x is a potentially precomputed input
+        """
+        inputs_to_layers = self.get_layer_inputs(x, precomputed=precomputed)
+        preprocessed = self._preprocess_inputs(inputs_to_layers, compress_convolutional=True)
+        weights = [w.flatten(start_dim=1) for w in weights]
         return [alignment(input, weight, method=method, relative=relative) for input, weight in zip(preprocessed, weights)]
 
     @torch.no_grad()
