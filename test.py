@@ -45,7 +45,9 @@ if __name__ == "__main__":
     optimizer = torch.optim.Adam(net.parameters())
 
     parameters = dict(
-        num_epochs=2,
+        num_epochs=20,
         compare_expected=True,
+        frequency=5,
+        delta_alignment=True,
     )
     results = train.train([net], [optimizer], dataset, **parameters)
